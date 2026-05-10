@@ -85,9 +85,9 @@ fun AmoebaGame() {
         )
     }
     val infiniteTransition = rememberInfiniteTransition(label = "amoeba")
-    val morphPhase by infiniteTransition.animateFloat(
+    val morphProgress by infiniteTransition.animateFloat(
         initialValue = 0f,
-        targetValue = (2f * PI).toFloat(),
+        targetValue = 1f,
         animationSpec = infiniteRepeatable(tween(2800, easing = LinearEasing), RepeatMode.Restart),
         label = "morph"
     )
@@ -317,7 +317,7 @@ fun AmoebaGame() {
             drawCircle(color = Color(0xFFE5A55E), radius = foodRadius, center = food.position - cameraTopLeft)
         }
 
-        drawAmoebaBody(blobPos - cameraTopLeft, blobRadius, morphPhase, direction, reachedFood)
+        drawAmoebaBody(blobPos - cameraTopLeft, blobRadius, morphProgress, direction, reachedFood)
         drawEyes(blobPos - cameraTopLeft, blobRadius, direction)
 
         if (reachedFood || vacuoleProgress > 0f) {
@@ -347,19 +347,20 @@ fun AmoebaGame() {
 private fun DrawScope.drawAmoebaBody(
     center: Offset,
     baseRadius: Float,
-    phase: Float,
+    morphProgress: Float,
     direction: Offset,
     engulfing: Boolean
 ) {
     val path = Path()
     val points = 48
+    val phase = (2f * PI.toFloat()) * morphProgress
     for (i in 0 until points) {
         val t = i.toFloat() / points
         val angle = (t * 2f * PI).toFloat()
         val travelBias = (direction.x * cos(angle) + direction.y * sin(angle)).toFloat()
 
-        val pseudoPodPulse = 0.11f * sin(angle * 5f + phase * 2.2f)
-        val pseudoPodNoise = 0.07f * cos(angle * 9f - phase * 1.6f)
+        val pseudoPodPulse = 0.11f * sin(angle * 5f + phase * 2f)
+        val pseudoPodNoise = 0.07f * cos(angle * 9f - phase * 3f)
         val frontStretch = 0.12f * travelBias
         val engulfStretch = if (engulfing) 0.18f * (0.5f + 0.5f * sin(phase * 4f + angle)) else 0f
 
