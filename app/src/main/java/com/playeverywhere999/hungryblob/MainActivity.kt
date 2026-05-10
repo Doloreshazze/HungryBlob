@@ -16,6 +16,7 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -27,8 +28,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.playeverywhere999.hungryblob.ui.theme.HungryBlobTheme
 import kotlin.math.PI
 import kotlin.math.cos
@@ -39,8 +44,18 @@ import kotlin.random.Random
 
 private data class FoodParticle(val id: Long, val position: Offset, val velocity: Offset)
 private data class ObstacleRect(val left: Float, val top: Float, val right: Float, val bottom: Float)
+private data class GameSnapshot(
+    val blobPos: Offset,
+    val foods: List<FoodParticle>,
+    val vacuoleProgress: Float,
+    val consumedFoodId: Long?,
+    val moveHeading: Offset,
+    val nextFoodId: Long
+)
 
 private const val FOOD_PARTICLE_COUNT = 400
+private const val GAME_PREFS = "hungry_blob_save"
+private const val GAME_STATE_KEY = "state_v1"
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -56,7 +71,19 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun AmoebaGame() {
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val density = LocalDensity.current
+    val initialSnapshot = remember {
+        loadSnapshot(context) ?: GameSnapshot(
+            blobPos = Offset(400f, 700f),
+            foods = emptyList(),
+            vacuoleProgress = 0f,
+            consumedFoodId = null,
+            moveHeading = Offset(1f, 0f),
+            nextFoodId = 1L
+        )
+    }
     val infiniteTransition = rememberInfiniteTransition(label = "amoeba")
     val morphPhase by infiniteTransition.animateFloat(
         initialValue = 0f,
@@ -65,14 +92,36 @@ fun AmoebaGame() {
         label = "morph"
     )
 
-    var blobPos by remember { mutableStateOf(Offset(400f, 700f)) }
+    var blobPos by remember { mutableStateOf(initialSnapshot.blobPos) }
     var cameraTopLeft by remember { mutableStateOf(Offset.Zero) }
-    var foods by remember { mutableStateOf(emptyList<FoodParticle>()) }
-    var vacuoleProgress by remember { mutableStateOf(0f) }
-    var consumedFoodId by remember { mutableStateOf<Long?>(null) }
+    var foods by remember { mutableStateOf(initialSnapshot.foods) }
+    var vacuoleProgress by remember { mutableStateOf(initialSnapshot.vacuoleProgress) }
+    var consumedFoodId by remember { mutableStateOf<Long?>(initialSnapshot.consumedFoodId) }
     var moveTarget by remember { mutableStateOf<Offset?>(null) }
-    var moveHeading by remember { mutableStateOf(Offset(1f, 0f)) }
-    var nextFoodId by remember { mutableStateOf(1L) }
+    var moveHeading by remember { mutableStateOf(initialSnapshot.moveHeading) }
+    var nextFoodId by remember { mutableStateOf(initialSnapshot.nextFoodId) }
+
+    DisposableEffect(lifecycleOwner, blobPos, foods, vacuoleProgress, consumedFoodId, moveHeading, nextFoodId) {
+        val observer = object : DefaultLifecycleObserver {
+            override fun onPause(owner: LifecycleOwner) {
+                saveSnapshot(
+                    context = context,
+                    snapshot = GameSnapshot(
+                        blobPos = blobPos,
+                        foods = foods,
+                        vacuoleProgress = vacuoleProgress,
+                        consumedFoodId = consumedFoodId,
+                        moveHeading = moveHeading,
+                        nextFoodId = nextFoodId
+                    )
+                )
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
 
     Canvas(
         modifier = Modifier
@@ -492,4 +541,62 @@ fun AmoebaGamePreview() {
     HungryBlobTheme {
         AmoebaGame()
     }
+}
+
+private fun saveSnapshot(context: android.content.Context, snapshot: GameSnapshot) {
+    val foodsEncoded = snapshot.foods.joinToString(";") { food ->
+        listOf(
+            food.id,
+            food.position.x,
+            food.position.y,
+            food.velocity.x,
+            food.velocity.y
+        ).joinToString(",")
+    }
+    val header = listOf(
+        snapshot.blobPos.x,
+        snapshot.blobPos.y,
+        snapshot.vacuoleProgress,
+        snapshot.consumedFoodId ?: -1L,
+        snapshot.moveHeading.x,
+        snapshot.moveHeading.y,
+        snapshot.nextFoodId
+    ).joinToString("|")
+
+    context.getSharedPreferences(GAME_PREFS, android.content.Context.MODE_PRIVATE)
+        .edit()
+        .putString(GAME_STATE_KEY, "$header#$foodsEncoded")
+        .apply()
+}
+
+private fun loadSnapshot(context: android.content.Context): GameSnapshot? {
+    val raw = context.getSharedPreferences(GAME_PREFS, android.content.Context.MODE_PRIVATE).getString(GAME_STATE_KEY, null)
+        ?: return null
+    val split = raw.split("#", limit = 2)
+    if (split.size != 2) return null
+
+    val header = split[0].split("|")
+    if (header.size != 7) return null
+
+    return runCatching {
+        val blobPos = Offset(header[0].toFloat(), header[1].toFloat())
+        val vacuole = header[2].toFloat()
+        val consumed = header[3].toLong().let { if (it >= 0L) it else null }
+        val heading = Offset(header[4].toFloat(), header[5].toFloat())
+        val nextFoodId = header[6].toLong()
+        val foods = if (split[1].isBlank()) {
+            emptyList()
+        } else {
+            split[1].split(';').mapNotNull { token ->
+                val parts = token.split(',')
+                if (parts.size != 5) return@mapNotNull null
+                FoodParticle(
+                    id = parts[0].toLong(),
+                    position = Offset(parts[1].toFloat(), parts[2].toFloat()),
+                    velocity = Offset(parts[3].toFloat(), parts[4].toFloat())
+                )
+            }
+        }
+        GameSnapshot(blobPos, foods, vacuole, consumed, heading, nextFoodId)
+    }.getOrNull()
 }
