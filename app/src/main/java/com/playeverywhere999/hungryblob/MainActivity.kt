@@ -12,6 +12,7 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -82,6 +83,22 @@ fun AmoebaGame() {
                 detectTapGestures { tap ->
                     moveTarget = tap
                 }
+            }
+            .pointerInput(Unit) {
+                detectDragGestures(
+                    onDragStart = { touch ->
+                        moveTarget = touch
+                    },
+                    onDrag = { change, _ ->
+                        moveTarget = change.position
+                    },
+                    onDragEnd = {
+                        moveTarget = null
+                    },
+                    onDragCancel = {
+                        moveTarget = null
+                    }
+                )
             }
     ) {
         val speed = with(density) { 2.5f }
