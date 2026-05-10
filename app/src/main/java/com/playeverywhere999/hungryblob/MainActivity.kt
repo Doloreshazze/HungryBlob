@@ -422,7 +422,7 @@ private fun DrawScope.drawEyes(
 
     val eyeRadius = radius * 0.18f
     val idlePupilOffset = facing * (eyeRadius * 0.35f)
-    val spinAngle = spinPhase * 2f * PI.toFloat() * 14f
+    val spinAngle = spinPhase * 2f * PI.toFloat() * 7f
     val spinOffset = Offset(cos(spinAngle).toFloat(), sin(spinAngle).toFloat()) * (eyeRadius * 0.38f)
     val pupilOffset = if (spinning) spinOffset else idlePupilOffset
 
