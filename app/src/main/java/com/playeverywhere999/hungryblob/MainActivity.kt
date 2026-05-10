@@ -72,6 +72,7 @@ fun AmoebaGame() {
         )
     }
     var vacuoleProgress by remember { mutableStateOf(0f) }
+    var moveTarget by remember { mutableStateOf<Offset?>(null) }
 
     Canvas(
         modifier = Modifier
@@ -79,54 +80,38 @@ fun AmoebaGame() {
             .background(Color(0xFF071923))
             .pointerInput(Unit) {
                 detectTapGestures { tap ->
-                    foods = foods + FoodParticle(position = tap, velocity = Offset.Zero)
+                    moveTarget = tap
                 }
             }
     ) {
         val speed = with(density) { 2.5f }
         val blobRadius = min(size.width, size.height) * 0.09f
-        val nearestFood = foods.minByOrNull { (it.position - blobPos).getDistance() }
-        val targetFoodPosition = nearestFood?.position?.let { food ->
-            val margin = blobRadius * 0.9f
+        val movementPadding = blobRadius * 0.5f
+        val boundedTarget = moveTarget?.let { target ->
             Offset(
-                x = food.x.coerceIn(margin, size.width - margin),
-                y = food.y.coerceIn(margin, size.height - margin)
+                x = target.x.coerceIn(movementPadding, size.width - movementPadding),
+                y = target.y.coerceIn(movementPadding, size.height - movementPadding)
             )
         }
-        val toFood = targetFoodPosition?.minus(blobPos) ?: Offset.Zero
-        val distance = toFood.getDistance()
-        val direction = if (distance > 0.001f) toFood / distance else Offset(1f, 0f)
+        val toTarget = boundedTarget?.minus(blobPos) ?: Offset.Zero
+        val targetDistance = toTarget.getDistance()
+        val direction = if (targetDistance > 0.001f) toTarget / targetDistance else Offset(1f, 0f)
+
+        if (boundedTarget != null && targetDistance > speed) {
+            val moved = blobPos + direction * speed
+            blobPos = Offset(
+                x = moved.x.coerceIn(movementPadding, size.width - movementPadding),
+                y = moved.y.coerceIn(movementPadding, size.height - movementPadding)
+            )
+        } else if (boundedTarget != null) {
+            blobPos = boundedTarget
+            moveTarget = null
+        }
+
+        val nearestFood = foods.minByOrNull { (it.position - blobPos).getDistance() }
         val reachedFood = nearestFood != null && (nearestFood.position - blobPos).getDistance() < blobRadius * 0.8f
 
-        val safePadding = blobRadius * 0.7f
-        val toCenter = Offset(size.width * 0.5f, size.height * 0.5f) - blobPos
-        val nearLeft = blobPos.x < safePadding
-        val nearRight = blobPos.x > size.width - safePadding
-        val nearTop = blobPos.y < safePadding
-        val nearBottom = blobPos.y > size.height - safePadding
-        val cornerPressure = when {
-            (nearLeft || nearRight) && (nearTop || nearBottom) -> 1.35f
-            nearLeft || nearRight || nearTop || nearBottom -> 1f
-            else -> 0f
-        }
-        val wallEscape = if (cornerPressure > 0f) {
-            val d = toCenter.getDistance().coerceAtLeast(0.001f)
-            toCenter / d
-        } else {
-            Offset.Zero
-        }
-        val steering = if (wallEscape.getDistance() > 0f) {
-            (direction + wallEscape * (0.9f * cornerPressure)).normalized()
-        } else {
-            direction
-        }
-
         if (!reachedFood) {
-            val moved = blobPos + steering * speed
-            blobPos = Offset(
-                x = moved.x.coerceIn(blobRadius * 0.5f, size.width - blobRadius * 0.5f),
-                y = moved.y.coerceIn(blobRadius * 0.5f, size.height - blobRadius * 0.5f)
-            )
             vacuoleProgress = 0f
         } else {
             vacuoleProgress = (vacuoleProgress + 0.015f).coerceAtMost(1f)
