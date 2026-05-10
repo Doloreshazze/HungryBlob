@@ -37,6 +37,7 @@ import kotlin.math.sin
 import kotlin.math.sqrt
 
 private data class FoodParticle(val position: Offset, val velocity: Offset)
+private data class ObstacleRect(val left: Float, val top: Float, val right: Float, val bottom: Float)
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -62,6 +63,7 @@ fun AmoebaGame() {
     )
 
     var blobPos by remember { mutableStateOf(Offset(400f, 700f)) }
+    var cameraTopLeft by remember { mutableStateOf(Offset.Zero) }
     var foods by remember {
         mutableStateOf(
             List(7) { index ->
@@ -82,16 +84,16 @@ fun AmoebaGame() {
             .background(Color(0xFF071923))
             .pointerInput(Unit) {
                 detectTapGestures { tap ->
-                    moveTarget = tap
+                    moveTarget = tap + cameraTopLeft
                 }
             }
             .pointerInput(Unit) {
                 detectDragGestures(
                     onDragStart = { touch ->
-                        moveTarget = touch
+                        moveTarget = touch + cameraTopLeft
                     },
                     onDrag = { change, _ ->
-                        moveTarget = change.position
+                        moveTarget = change.position + cameraTopLeft
                     },
                     onDragEnd = {
                         moveTarget = null
@@ -103,12 +105,21 @@ fun AmoebaGame() {
             }
     ) {
         val speed = with(density) { 2.5f }
-        val blobRadius = min(size.width, size.height) * 0.09f
+        val viewportSize = size
+        val worldSize = Size(viewportSize.width * 10f, viewportSize.height * 4f)
+        val obstacles = buildLetterObstacles(worldSize, viewportSize)
+        val blobRadius = min(viewportSize.width, viewportSize.height) * 0.09f
         val movementPadding = blobRadius * 0.5f
+
+        cameraTopLeft = Offset(
+            x = (blobPos.x - viewportSize.width * 0.5f).coerceIn(0f, worldSize.width - viewportSize.width),
+            y = (blobPos.y - viewportSize.height * 0.5f).coerceIn(0f, worldSize.height - viewportSize.height)
+        )
+
         val boundedTarget = moveTarget?.let { target ->
             Offset(
-                x = target.x.coerceIn(movementPadding, size.width - movementPadding),
-                y = target.y.coerceIn(movementPadding, size.height - movementPadding)
+                x = target.x.coerceIn(movementPadding, worldSize.width - movementPadding),
+                y = target.y.coerceIn(movementPadding, worldSize.height - movementPadding)
             )
         }
         val toTarget = boundedTarget?.minus(blobPos) ?: Offset.Zero
@@ -118,20 +129,22 @@ fun AmoebaGame() {
         if (boundedTarget != null && targetDistance > speed) {
             moveHeading = direction
             val moved = blobPos + moveHeading * speed
-            blobPos = Offset(
-                x = moved.x.coerceIn(movementPadding, size.width - movementPadding),
-                y = moved.y.coerceIn(movementPadding, size.height - movementPadding)
+            val candidate = Offset(
+                x = moved.x.coerceIn(movementPadding, worldSize.width - movementPadding),
+                y = moved.y.coerceIn(movementPadding, worldSize.height - movementPadding)
             )
+            if (!collidesWithObstacles(candidate, blobRadius * 0.75f, obstacles)) blobPos = candidate
         } else if (boundedTarget != null) {
             blobPos = boundedTarget
             moveTarget = null
         } else {
             val drift = if (moveHeading.getDistance() > 0.001f) moveHeading.normalized() else Offset.Zero
             val moved = blobPos + drift * speed
-            blobPos = Offset(
-                x = moved.x.coerceIn(movementPadding, size.width - movementPadding),
-                y = moved.y.coerceIn(movementPadding, size.height - movementPadding)
+            val candidate = Offset(
+                x = moved.x.coerceIn(movementPadding, worldSize.width - movementPadding),
+                y = moved.y.coerceIn(movementPadding, worldSize.height - movementPadding)
             )
+            if (!collidesWithObstacles(candidate, blobRadius * 0.75f, obstacles)) blobPos = candidate
         }
 
         val nearestFood = foods.minByOrNull { (it.position - blobPos).getDistance() }
@@ -155,38 +168,50 @@ fun AmoebaGame() {
             val damped = (food.velocity + accel) * 0.93f
             val moved = food.position + damped
 
-            val hitX = moved.x <= foodRadius || moved.x >= size.width - foodRadius
-            val hitY = moved.y <= foodRadius || moved.y >= size.height - foodRadius
-            val bouncedVelocity = Offset(
+            val hitX = moved.x <= foodRadius || moved.x >= worldSize.width - foodRadius
+            val hitY = moved.y <= foodRadius || moved.y >= worldSize.height - foodRadius
+            val worldBounced = Offset(
                 x = if (hitX) -damped.x * 0.82f else damped.x,
                 y = if (hitY) -damped.y * 0.82f else damped.y
             )
 
+            val clamped = Offset(
+                x = moved.x.coerceIn(foodRadius, worldSize.width - foodRadius),
+                y = moved.y.coerceIn(foodRadius, worldSize.height - foodRadius)
+            )
+            val blockedByLetter = collidesWithObstacles(clamped, foodRadius, obstacles)
+            val finalVelocity = if (blockedByLetter) worldBounced * -0.78f else worldBounced
+
             FoodParticle(
-                position = Offset(
-                    x = moved.x.coerceIn(foodRadius, size.width - foodRadius),
-                    y = moved.y.coerceIn(foodRadius, size.height - foodRadius)
-                ),
-                velocity = bouncedVelocity
+                position = if (blockedByLetter) food.position else clamped,
+                velocity = finalVelocity
+            )
+        }
+
+        obstacles.forEach { obstacle ->
+            drawRect(
+                color = Color(0xFF2B6F7F),
+                topLeft = Offset(obstacle.left, obstacle.top) - cameraTopLeft,
+                size = Size(obstacle.right - obstacle.left, obstacle.bottom - obstacle.top)
             )
         }
 
         foods.forEach { food ->
-            drawCircle(color = Color(0xFFE5A55E), radius = foodRadius, center = food.position)
+            drawCircle(color = Color(0xFFE5A55E), radius = foodRadius, center = food.position - cameraTopLeft)
         }
 
-        drawAmoebaBody(blobPos, blobRadius, morphPhase, direction, reachedFood)
-        drawEyes(blobPos, blobRadius, direction)
+        drawAmoebaBody(blobPos - cameraTopLeft, blobRadius, morphPhase, direction, reachedFood)
+        drawEyes(blobPos - cameraTopLeft, blobRadius, direction)
 
         if (reachedFood || vacuoleProgress > 0f) {
             val eatenFoodPos = nearestFood?.position ?: blobPos
-            drawVacuole(eatenFoodPos, blobRadius * 0.7f, vacuoleProgress)
+            drawVacuole(eatenFoodPos - cameraTopLeft, blobRadius * 0.7f, vacuoleProgress)
             if (vacuoleProgress >= 1f) {
                 if (nearestFood != null) foods = foods - nearestFood
                 if (foods.size < 7) {
                     foods = foods + FoodParticle(
                         position = pickSpawnPosition(
-                            worldSize = size,
+                            worldSize = worldSize,
                             blobPos = blobPos,
                             padding = foodRadius,
                             phase = morphPhase,
@@ -293,6 +318,64 @@ private fun pickSpawnPosition(
         if (safe && !isCornerZone && (candidate - blobPos).getDistance() >= minBlobDistance) return candidate
     }
     return center
+}
+
+private fun collidesWithObstacles(center: Offset, radius: Float, obstacles: List<ObstacleRect>): Boolean =
+    obstacles.any { obstacle ->
+        val closestX = center.x.coerceIn(obstacle.left, obstacle.right)
+        val closestY = center.y.coerceIn(obstacle.top, obstacle.bottom)
+        val dx = center.x - closestX
+        val dy = center.y - closestY
+        dx * dx + dy * dy < radius * radius
+    }
+
+private fun buildLetterObstacles(worldSize: Size, viewportSize: Size): List<ObstacleRect> {
+    val glyphs = mapOf(
+        'H' to listOf("10001","10001","11111","10001","10001","10001","10001"),
+        'U' to listOf("10001","10001","10001","10001","10001","10001","01110"),
+        'N' to listOf("10001","11001","10101","10011","10001","10001","10001"),
+        'G' to listOf("01110","10001","10000","10111","10001","10001","01111"),
+        'R' to listOf("11110","10001","10001","11110","10100","10010","10001"),
+        'Y' to listOf("10001","01010","00100","00100","00100","00100","00100"),
+        'B' to listOf("11111","10001","10001","11111","10001","10001","11111"),
+        'L' to listOf("10000","10000","10000","10000","10000","10000","11111"),
+        'O' to listOf("01110","10001","10001","10001","10001","10001","01110"),
+        ' ' to listOf("000","000","000","000","000","000","000")
+    )
+
+    fun buildLine(text: String, topY: Float, lineHeight: Float): List<ObstacleRect> {
+        val totalCols = text.sumOf { glyphs[it]!![0].length } + (text.length - 1)
+        val cell = (worldSize.width * 0.92f) / totalCols
+        val thickness = cell * 0.94f
+        val scaledCell = min(cell, lineHeight / 7f)
+        val xStart = (worldSize.width - totalCols * scaledCell) * 0.5f
+        val yStart = topY + (lineHeight - 7f * scaledCell) * 0.5f
+
+        val out = mutableListOf<ObstacleRect>()
+        var cursorX = xStart
+        for (ch in text) {
+            val pattern = glyphs[ch] ?: glyphs[' ']!!
+            pattern.forEachIndexed { row, line ->
+                line.forEachIndexed { col, c ->
+                    if (c == '1') {
+                        val x = cursorX + col * scaledCell
+                        val y = yStart + row * scaledCell
+                        out += ObstacleRect(x, y, x + thickness, y + thickness)
+                    }
+                }
+            }
+            cursorX += pattern[0].length * scaledCell + scaledCell
+        }
+        return out
+    }
+
+    val verticalPadding = maxOf(viewportSize.height * 0.25f, worldSize.height * 0.06f)
+    val availableHeight = worldSize.height - verticalPadding * 2f
+    val gap = availableHeight * 0.08f
+    val lineHeight = (availableHeight - gap) * 0.5f
+
+    return buildLine("HUNGRY", verticalPadding, lineHeight) +
+        buildLine("BLOB", verticalPadding + lineHeight + gap, lineHeight)
 }
 
 private operator fun Offset.plus(other: Offset): Offset = Offset(x + other.x, y + other.y)
