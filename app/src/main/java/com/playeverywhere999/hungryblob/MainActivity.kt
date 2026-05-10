@@ -107,7 +107,7 @@ fun AmoebaGame() {
         val speed = with(density) { 2.5f }
         val viewportSize = size
         val worldSize = Size(viewportSize.width * 10f, viewportSize.height * 4f)
-        val obstacles = buildLetterObstacles(worldSize)
+        val obstacles = buildLetterObstacles(worldSize, viewportSize)
         val blobRadius = min(viewportSize.width, viewportSize.height) * 0.09f
         val movementPadding = blobRadius * 0.5f
 
@@ -190,7 +190,7 @@ fun AmoebaGame() {
 
         obstacles.forEach { obstacle ->
             drawRect(
-                color = Color(0xFF0D2C38),
+                color = Color(0xFF2B6F7F),
                 topLeft = Offset(obstacle.left, obstacle.top) - cameraTopLeft,
                 size = Size(obstacle.right - obstacle.left, obstacle.bottom - obstacle.top)
             )
@@ -329,7 +329,7 @@ private fun collidesWithObstacles(center: Offset, radius: Float, obstacles: List
         dx * dx + dy * dy < radius * radius
     }
 
-private fun buildLetterObstacles(worldSize: Size): List<ObstacleRect> {
+private fun buildLetterObstacles(worldSize: Size, viewportSize: Size): List<ObstacleRect> {
     val text = "HUNGRY BLOB"
     val glyphs = mapOf(
         'H' to listOf("10001","10001","11111","10001","10001","10001","10001"),
@@ -343,11 +343,11 @@ private fun buildLetterObstacles(worldSize: Size): List<ObstacleRect> {
         'O' to listOf("01110","10001","10001","10000","10001","10001","01110"),
         ' ' to listOf("000","000","000","000","000","000","000")
     )
-    val cell = min(worldSize.width / 85f, worldSize.height / 16f)
+    val cell = min(viewportSize.width / 8.5f, viewportSize.height / 3.2f)
     val gap = cell
     val totalCols = text.sumOf { glyphs[it]!![0].length } + (text.length - 1)
-    val startX = (worldSize.width - totalCols * cell) * 0.5f
-    val startY = worldSize.height * 0.35f
+    val startX = (viewportSize.width * 0.55f).coerceAtMost(worldSize.width - totalCols * cell - cell)
+    val startY = (viewportSize.height * 0.55f).coerceAtMost(worldSize.height - 8f * cell)
     val thickness = cell * 0.9f
 
     val obstacles = mutableListOf<ObstacleRect>()
