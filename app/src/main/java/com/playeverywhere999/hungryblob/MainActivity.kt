@@ -122,23 +122,27 @@ fun AmoebaGame() {
 
         if (boundedTarget != null && targetDistance > speed) {
             moveHeading = direction
-            val moved = blobPos + moveHeading * speed
-            val candidate = Offset(
-                x = moved.x.coerceIn(movementPadding, worldSize.width - movementPadding),
-                y = moved.y.coerceIn(movementPadding, worldSize.height - movementPadding)
+            blobPos = moveWithSliding(
+                current = blobPos,
+                velocity = moveHeading * speed,
+                radius = blobRadius * 0.75f,
+                obstacles = obstacles,
+                worldSize = worldSize,
+                padding = movementPadding
             )
-            if (!collidesWithObstacles(candidate, blobRadius * 0.75f, obstacles)) blobPos = candidate
         } else if (boundedTarget != null) {
             blobPos = boundedTarget
             moveTarget = null
         } else {
             val drift = if (moveHeading.getDistance() > 0.001f) moveHeading.normalized() else Offset.Zero
-            val moved = blobPos + drift * speed
-            val candidate = Offset(
-                x = moved.x.coerceIn(movementPadding, worldSize.width - movementPadding),
-                y = moved.y.coerceIn(movementPadding, worldSize.height - movementPadding)
+            blobPos = moveWithSliding(
+                current = blobPos,
+                velocity = drift * speed,
+                radius = blobRadius * 0.75f,
+                obstacles = obstacles,
+                worldSize = worldSize,
+                padding = movementPadding
             )
-            if (!collidesWithObstacles(candidate, blobRadius * 0.75f, obstacles)) blobPos = candidate
         }
 
         val nearestFood = foods.minByOrNull { (it.position - blobPos).getDistance() }
@@ -363,6 +367,41 @@ private fun randomFoodPosition(
     }
 
     return Offset(worldSize.width * 0.5f, worldSize.height * 0.5f)
+}
+
+private fun moveWithSliding(
+    current: Offset,
+    velocity: Offset,
+    radius: Float,
+    obstacles: List<ObstacleRect>,
+    worldSize: Size,
+    padding: Float
+): Offset {
+    val target = Offset(
+        x = (current.x + velocity.x).coerceIn(padding, worldSize.width - padding),
+        y = (current.y + velocity.y).coerceIn(padding, worldSize.height - padding)
+    )
+
+    if (!collidesWithObstacles(target, radius, obstacles)) return target
+
+    val xOnly = Offset(
+        x = (current.x + velocity.x).coerceIn(padding, worldSize.width - padding),
+        y = current.y.coerceIn(padding, worldSize.height - padding)
+    )
+    val yOnly = Offset(
+        x = current.x.coerceIn(padding, worldSize.width - padding),
+        y = (current.y + velocity.y).coerceIn(padding, worldSize.height - padding)
+    )
+
+    val canSlideX = !collidesWithObstacles(xOnly, radius, obstacles)
+    val canSlideY = !collidesWithObstacles(yOnly, radius, obstacles)
+
+    return when {
+        canSlideX && canSlideY -> if (kotlin.math.abs(velocity.x) >= kotlin.math.abs(velocity.y)) xOnly else yOnly
+        canSlideX -> xOnly
+        canSlideY -> yOnly
+        else -> current
+    }
 }
 
 private fun collidesWithObstacles(center: Offset, radius: Float, obstacles: List<ObstacleRect>): Boolean =
