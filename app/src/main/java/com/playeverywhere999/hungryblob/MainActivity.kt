@@ -254,7 +254,12 @@ fun AmoebaGame() {
         }
 
         foods = foods.map { food ->
-            val away = food.position - blobPos
+            val botThreat = bots.minByOrNull { (food.position - it.position).getDistance() }?.position
+            val playerDistance = (food.position - blobPos).getDistance()
+            val botDistance = botThreat?.let { (food.position - it).getDistance() } ?: Float.MAX_VALUE
+            val threatPos = if (playerDistance <= botDistance) blobPos else botThreat
+
+            val away = if (threatPos != null) food.position - threatPos else Offset.Zero
             val d = away.getDistance().coerceAtLeast(0.001f)
             val escapeDir = away / d
             val panic = ((blobRadius * 3.2f - d) / (blobRadius * 3.2f)).coerceIn(0f, 1f)
@@ -344,7 +349,22 @@ fun AmoebaGame() {
                 worldSize = worldSize,
                 padding = movementPadding
             )
-            bot.copy(position = moved, heading = botDirection)
+            val isStuck = (moved - bot.position).getDistance() < 0.2f
+            if (isStuck) {
+                val randomAngle = Random.nextFloat() * 2f * PI.toFloat()
+                val escapeHeading = Offset(cos(randomAngle), sin(randomAngle))
+                val escaped = moveWithSliding(
+                    current = bot.position,
+                    velocity = escapeHeading * (botSpeed * 1.3f),
+                    radius = botRadius,
+                    obstacles = obstacles,
+                    worldSize = worldSize,
+                    padding = movementPadding
+                )
+                bot.copy(position = escaped, heading = escapeHeading, color = bot.color)
+            } else {
+                bot.copy(position = moved, heading = botDirection, color = bot.color)
+            }
         }
 
         val eatenByBots = bots.mapNotNull { bot ->
