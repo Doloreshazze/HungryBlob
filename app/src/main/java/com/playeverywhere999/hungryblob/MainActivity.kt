@@ -91,8 +91,30 @@ fun AmoebaGame() {
         val blobRadius = min(size.width, size.height) * 0.09f
         val reachedFood = nearestFood != null && distance < blobRadius * 0.8f
 
+        val safePadding = blobRadius * 0.7f
+        val toCenter = Offset(size.width * 0.5f, size.height * 0.5f) - blobPos
+        val nearLeft = blobPos.x < safePadding
+        val nearRight = blobPos.x > size.width - safePadding
+        val nearTop = blobPos.y < safePadding
+        val nearBottom = blobPos.y > size.height - safePadding
+        val wallEscape = if (nearLeft || nearRight || nearTop || nearBottom) {
+            val d = toCenter.getDistance().coerceAtLeast(0.001f)
+            toCenter / d
+        } else {
+            Offset.Zero
+        }
+        val steering = if (wallEscape.getDistance() > 0f) {
+            (direction + wallEscape * 0.9f).normalized()
+        } else {
+            direction
+        }
+
         if (!reachedFood) {
-            blobPos += direction * speed
+            val moved = blobPos + steering * speed
+            blobPos = Offset(
+                x = moved.x.coerceIn(blobRadius * 0.5f, size.width - blobRadius * 0.5f),
+                y = moved.y.coerceIn(blobRadius * 0.5f, size.height - blobRadius * 0.5f)
+            )
             vacuoleProgress = 0f
         } else {
             vacuoleProgress = (vacuoleProgress + 0.015f).coerceAtMost(1f)
@@ -219,6 +241,10 @@ private operator fun Offset.minus(other: Offset): Offset = Offset(x - other.x, y
 private operator fun Offset.times(value: Float): Offset = Offset(x * value, y * value)
 private operator fun Offset.div(value: Float): Offset = Offset(x / value, y / value)
 private fun Offset.getDistance(): Float = sqrt(x * x + y * y)
+private fun Offset.normalized(): Offset {
+    val d = getDistance()
+    return if (d > 0.001f) this / d else Offset.Zero
+}
 
 @Preview(showBackground = true)
 @Composable
