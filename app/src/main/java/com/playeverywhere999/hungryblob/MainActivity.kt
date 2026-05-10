@@ -50,7 +50,15 @@ private data class BotAmoeba(
     val heading: Offset,
     val color: Color,
     val consumedFoodId: Long? = null,
-    val vacuoleProgress: Float = 0f
+    val vacuoleProgress: Float = 0f,
+    val shockTimer: Float = 0f
+)
+
+private data class PoisonJellyfish(
+    val id: Int,
+    val position: Offset,
+    val driftVelocity: Offset,
+    val driftPhase: Float
 )
 private data class GameSnapshot(
     val blobPos: Offset,
@@ -63,6 +71,7 @@ private data class GameSnapshot(
 
 private const val FOOD_PARTICLE_COUNT = 400
 private const val BOT_AMOEBA_COUNT = 60
+private const val POISON_JELLYFISH_COUNT = 14
 private const val GAME_PREFS = "hungry_blob_save"
 private const val GAME_STATE_KEY = "state_v1"
 
@@ -110,6 +119,8 @@ fun AmoebaGame() {
     var moveHeading by remember { mutableStateOf(initialSnapshot.moveHeading) }
     var nextFoodId by remember { mutableStateOf(initialSnapshot.nextFoodId) }
     var bots by remember { mutableStateOf(emptyList<BotAmoeba>()) }
+    var jellyfish by remember { mutableStateOf(emptyList<PoisonJellyfish>()) }
+    var shockTimer by remember { mutableStateOf(0f) }
 
     DisposableEffect(lifecycleOwner, blobPos, foods, vacuoleProgress, consumedFoodId, moveHeading, nextFoodId) {
         val observer = object : DefaultLifecycleObserver {
@@ -225,6 +236,7 @@ fun AmoebaGame() {
 
         val foodRadius = blobRadius * 0.25f
         val botRadius = blobRadius
+        val jellyRadius = blobRadius * 0.9f
         if (bots.isEmpty()) {
             bots = List(BOT_AMOEBA_COUNT) { idx ->
                 val headingAngle = Random.nextFloat() * 2f * PI.toFloat()
@@ -240,7 +252,26 @@ fun AmoebaGame() {
                     heading = Offset(cos(headingAngle), sin(headingAngle)),
                     color = botColor(idx),
                     consumedFoodId = null,
-                    vacuoleProgress = 0f
+                    vacuoleProgress = 0f,
+                    shockTimer = 0f
+                )
+            }
+        }
+
+        if (jellyfish.isEmpty()) {
+            jellyfish = List(POISON_JELLYFISH_COUNT) { idx ->
+                val angle = Random.nextFloat() * 2f * PI.toFloat()
+                PoisonJellyfish(
+                    id = idx,
+                    position = randomFoodPosition(
+                        worldSize = worldSize,
+                        padding = jellyRadius + movementPadding,
+                        blobPos = blobPos,
+                        minDistanceFromBlob = blobRadius * 3.5f,
+                        obstacles = obstacles
+                    ),
+                    driftVelocity = Offset(cos(angle), sin(angle)) * (speed * 0.22f),
+                    driftPhase = Random.nextFloat()
                 )
             }
         }
@@ -261,6 +292,34 @@ fun AmoebaGame() {
                 )
             }
         }
+
+
+        jellyfish = jellyfish.map { jelly ->
+            val wobbleAngle = (morphProgress * 2f * PI.toFloat()) + jelly.driftPhase * 2f * PI.toFloat()
+            val wobble = Offset(cos(wobbleAngle).toFloat(), sin(wobbleAngle * 1.3f).toFloat()) * (speed * 0.08f)
+            val moved = moveWithSliding(
+                current = jelly.position,
+                velocity = jelly.driftVelocity + wobble,
+                radius = jellyRadius,
+                obstacles = obstacles,
+                worldSize = worldSize,
+                padding = jellyRadius + movementPadding
+            )
+            val blocked = (moved - jelly.position).getDistance() < 0.08f
+            if (blocked) {
+                val newAngle = Random.nextFloat() * 2f * PI.toFloat()
+                jelly.copy(
+                    position = moved,
+                    driftVelocity = Offset(cos(newAngle), sin(newAngle)) * (speed * 0.24f),
+                    driftPhase = (jelly.driftPhase + 0.1f) % 1f
+                )
+            } else {
+                jelly.copy(position = moved, driftPhase = (jelly.driftPhase + 0.0025f) % 1f)
+            }
+        }
+
+        val hitJelly = jellyfish.any { (it.position - blobPos).getDistance() < blobRadius + jellyRadius * 0.65f }
+        shockTimer = if (hitJelly) 1f else (shockTimer - 0.03f).coerceAtLeast(0f)
 
         foods = foods.map { food ->
             val botThreat = bots.minByOrNull { (food.position - it.position).getDistance() }?.position
@@ -374,6 +433,21 @@ fun AmoebaGame() {
             } else {
                 bot.copy(position = moved, heading = botDirection, color = bot.color)
             }
+        }.map { bot ->
+            val zapped = jellyfish.any { (it.position - bot.position).getDistance() < botRadius + jellyRadius * 0.62f }
+            val newShock = if (zapped) 1f else (bot.shockTimer - 0.03f).coerceAtLeast(0f)
+            if (zapped) {
+                val away = (bot.position - jellyfish.minByOrNull { (it.position - bot.position).getDistance() }!!.position).normalized()
+                val pushed = moveWithSliding(
+                    current = bot.position,
+                    velocity = away * (speed * 3.2f),
+                    radius = botRadius,
+                    obstacles = obstacles,
+                    worldSize = worldSize,
+                    padding = movementPadding
+                )
+                bot.copy(position = pushed, shockTimer = newShock)
+            } else bot.copy(shockTimer = newShock)
         }
 
         val foodsToRemoveByBots = mutableSetOf<Long>()
@@ -412,6 +486,19 @@ fun AmoebaGame() {
             }
         }
 
+        if (shockTimer > 0f) {
+            val nearestJelly = jellyfish.minByOrNull { (it.position - blobPos).getDistance() }?.position ?: blobPos
+            val away = (blobPos - nearestJelly).normalized()
+            blobPos = moveWithSliding(
+                current = blobPos,
+                velocity = away * (speed * 3.8f * shockTimer),
+                radius = blobRadius * 0.75f,
+                obstacles = obstacles,
+                worldSize = worldSize,
+                padding = movementPadding
+            )
+        }
+
         obstacles.forEach { obstacle ->
             drawRect(
                 color = Color(0xFF2B6F7F),
@@ -422,6 +509,14 @@ fun AmoebaGame() {
 
         foods.forEach { food ->
             drawCircle(color = Color(0xFFE5A55E), radius = foodRadius, center = food.position - cameraTopLeft)
+        }
+
+        jellyfish.forEach { jelly ->
+            drawPoisonJellyfish(
+                center = jelly.position - cameraTopLeft,
+                radius = jellyRadius,
+                phase = morphProgress + jelly.driftPhase
+            )
         }
 
         bots.forEach { bot ->
@@ -440,7 +535,9 @@ fun AmoebaGame() {
                 radius = blobRadius,
                 direction = bot.heading,
                 spinning = bot.consumedFoodId != null || bot.vacuoleProgress > 0f,
-                spinPhase = morphProgress
+                spinPhase = morphProgress,
+                shocked = bot.shockTimer > 0f,
+                shockStrength = bot.shockTimer
             )
         }
 
@@ -459,7 +556,9 @@ fun AmoebaGame() {
             radius = blobRadius,
             direction = direction,
             spinning = reachedFood || vacuoleProgress > 0f,
-            spinPhase = morphProgress
+            spinPhase = morphProgress,
+            shocked = shockTimer > 0f,
+            shockStrength = shockTimer
         )
 
         if (reachedFood || vacuoleProgress > 0f) {
@@ -534,6 +633,25 @@ private fun DrawScope.drawAmoebaBody(
     drawPath(path = path, color = bodyColor)
 }
 
+private fun DrawScope.drawPoisonJellyfish(center: Offset, radius: Float, phase: Float) {
+    val domeColor = Color(0xCCB06CFF)
+    val tentacleColor = Color(0xEE9A57E6)
+    val eyeRadius = radius * 0.16f
+    drawCircle(color = domeColor, radius = radius * 0.72f, center = center)
+
+    repeat(5) { idx ->
+        val sway = sin((phase * 2f * PI.toFloat()) + idx).toFloat()
+        val x = center.x + (idx - 2) * radius * 0.2f
+        val y = center.y + radius * 0.35f
+        val tip = Offset(x + sway * radius * 0.14f, y + radius * (0.45f + idx * 0.05f))
+        drawLine(tentacleColor, Offset(x, y), tip, strokeWidth = radius * 0.06f)
+    }
+
+    val eyeCenter = center + Offset(0f, -radius * 0.06f)
+    drawCircle(Color.White, eyeRadius, eyeCenter)
+    drawCircle(Color(0xFF230E3E), eyeRadius * 0.52f, eyeCenter + Offset(0f, eyeRadius * 0.1f))
+}
+
 private fun botColor(index: Int): Color =
     Color.hsv(
         hue = (index * (360f / BOT_AMOEBA_COUNT)) % 360f,
@@ -546,7 +664,9 @@ private fun DrawScope.drawEyes(
     radius: Float,
     direction: Offset,
     spinning: Boolean,
-    spinPhase: Float
+    spinPhase: Float,
+    shocked: Boolean = false,
+    shockStrength: Float = 0f
 ) {
     val facing = if (direction.getDistance() > 0.001f) direction else Offset(1f, 0f)
     val side = Offset(-facing.y, facing.x)
@@ -554,11 +674,13 @@ private fun DrawScope.drawEyes(
     val leftEyeCenter = center + facing * (radius * 0.25f) + side * (radius * 0.22f)
     val rightEyeCenter = center + facing * (radius * 0.25f) - side * (radius * 0.22f)
 
-    val eyeRadius = radius * 0.18f
+    val eyeScale = if (shocked) 1f + shockStrength * 1.2f else 1f
+    val eyeRadius = radius * 0.18f * eyeScale
     val idlePupilOffset = facing * (eyeRadius * 0.35f)
     val spinAngle = spinPhase * 2f * PI.toFloat() * 7f
     val spinOffset = Offset(cos(spinAngle).toFloat(), sin(spinAngle).toFloat()) * (eyeRadius * 0.38f)
-    val pupilOffset = if (spinning) spinOffset else idlePupilOffset
+    val madJitter = if (shocked) Offset(cos(spinAngle * 2.8f).toFloat(), sin(spinAngle * 3.3f).toFloat()) * (eyeRadius * 0.44f) else Offset.Zero
+    val pupilOffset = if (shocked) madJitter else if (spinning) spinOffset else idlePupilOffset
 
     drawCircle(Color.White, eyeRadius, leftEyeCenter)
     drawCircle(Color.White, eyeRadius, rightEyeCenter)
