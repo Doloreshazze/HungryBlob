@@ -399,7 +399,13 @@ fun AmoebaGame() {
             FoodParticle(
                 id = food.id,
                 position = nextPosition,
-                velocity = finalVelocity
+                velocity = nudgeFoodOutOfWorldCorner(
+                    position = nextPosition,
+                    velocity = finalVelocity,
+                    foodRadius = foodRadius,
+                    worldSize = worldSize,
+                    blobRadius = blobRadius
+                )
             )
         }
 
@@ -857,6 +863,27 @@ private operator fun Offset.minus(other: Offset): Offset = Offset(x - other.x, y
 private operator fun Offset.times(value: Float): Offset = Offset(x * value, y * value)
 private operator fun Offset.div(value: Float): Offset = Offset(x / value, y / value)
 private fun Offset.getDistance(): Float = sqrt(x * x + y * y)
+private fun nudgeFoodOutOfWorldCorner(
+    position: Offset,
+    velocity: Offset,
+    foodRadius: Float,
+    worldSize: Size,
+    blobRadius: Float
+): Offset {
+    val cornerBand = max(foodRadius * 2.2f, blobRadius * 0.45f)
+    val nearLeft = position.x <= foodRadius + cornerBand
+    val nearRight = position.x >= worldSize.width - foodRadius - cornerBand
+    val nearTop = position.y <= foodRadius + cornerBand
+    val nearBottom = position.y >= worldSize.height - foodRadius - cornerBand
+    val inCorner = (nearLeft || nearRight) && (nearTop || nearBottom)
+    if (!inCorner) return velocity
+
+    val center = Offset(worldSize.width * 0.5f, worldSize.height * 0.5f)
+    val outward = (center - position).normalized()
+    val kick = outward * (0.22f + Random.nextFloat() * 0.18f)
+    return (velocity * 0.8f) + kick
+}
+
 private fun Offset.normalized(): Offset {
     val d = getDistance()
     return if (d > 0.001f) this / d else Offset.Zero
