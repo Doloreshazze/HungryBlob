@@ -74,6 +74,7 @@ fun AmoebaGame() {
     }
     var vacuoleProgress by remember { mutableStateOf(0f) }
     var moveTarget by remember { mutableStateOf<Offset?>(null) }
+    var moveHeading by remember { mutableStateOf(Offset(1f, 0f)) }
 
     Canvas(
         modifier = Modifier
@@ -112,10 +113,11 @@ fun AmoebaGame() {
         }
         val toTarget = boundedTarget?.minus(blobPos) ?: Offset.Zero
         val targetDistance = toTarget.getDistance()
-        val direction = if (targetDistance > 0.001f) toTarget / targetDistance else Offset(1f, 0f)
+        val direction = if (targetDistance > 0.001f) toTarget / targetDistance else moveHeading
 
         if (boundedTarget != null && targetDistance > speed) {
-            val moved = blobPos + direction * speed
+            moveHeading = direction
+            val moved = blobPos + moveHeading * speed
             blobPos = Offset(
                 x = moved.x.coerceIn(movementPadding, size.width - movementPadding),
                 y = moved.y.coerceIn(movementPadding, size.height - movementPadding)
@@ -123,6 +125,13 @@ fun AmoebaGame() {
         } else if (boundedTarget != null) {
             blobPos = boundedTarget
             moveTarget = null
+        } else {
+            val drift = if (moveHeading.getDistance() > 0.001f) moveHeading.normalized() else Offset.Zero
+            val moved = blobPos + drift * speed
+            blobPos = Offset(
+                x = moved.x.coerceIn(movementPadding, size.width - movementPadding),
+                y = moved.y.coerceIn(movementPadding, size.height - movementPadding)
+            )
         }
 
         val nearestFood = foods.minByOrNull { (it.position - blobPos).getDistance() }
