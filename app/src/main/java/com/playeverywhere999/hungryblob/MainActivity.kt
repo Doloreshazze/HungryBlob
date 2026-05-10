@@ -317,7 +317,16 @@ fun AmoebaGame() {
             drawCircle(color = Color(0xFFE5A55E), radius = foodRadius, center = food.position - cameraTopLeft)
         }
 
-        drawAmoebaBody(blobPos - cameraTopLeft, blobRadius, morphProgress, direction, reachedFood)
+        val consumedFoodScreenPos = candidateFoodToConsume?.position?.minus(cameraTopLeft)
+        drawAmoebaBody(
+            center = blobPos - cameraTopLeft,
+            baseRadius = blobRadius,
+            morphProgress = morphProgress,
+            direction = direction,
+            engulfing = reachedFood,
+            foodScreenPosition = consumedFoodScreenPos,
+            engulfProgress = vacuoleProgress
+        )
         drawEyes(blobPos - cameraTopLeft, blobRadius, direction)
 
         if (reachedFood || vacuoleProgress > 0f) {
@@ -349,22 +358,40 @@ private fun DrawScope.drawAmoebaBody(
     baseRadius: Float,
     morphProgress: Float,
     direction: Offset,
-    engulfing: Boolean
+    engulfing: Boolean,
+    foodScreenPosition: Offset?,
+    engulfProgress: Float
 ) {
     val path = Path()
     val points = 48
     val phase = (2f * PI.toFloat()) * morphProgress
+    val toFood = foodScreenPosition?.minus(center)
+    val hasFoodTarget = toFood != null && toFood.getDistance() > 0.001f
+    val foodDir = if (hasFoodTarget) toFood!! / toFood.getDistance() else direction
+
     for (i in 0 until points) {
         val t = i.toFloat() / points
         val angle = (t * 2f * PI).toFloat()
         val travelBias = (direction.x * cos(angle) + direction.y * sin(angle)).toFloat()
+        val foodBias = (foodDir.x * cos(angle) + foodDir.y * sin(angle)).toFloat()
 
         val pseudoPodPulse = 0.11f * sin(angle * 5f + phase * 2f)
         val pseudoPodNoise = 0.07f * cos(angle * 9f - phase * 3f)
         val frontStretch = 0.12f * travelBias
-        val engulfStretch = if (engulfing) 0.18f * (0.5f + 0.5f * sin(phase * 4f + angle)) else 0f
+        val pseudoPodGrip = if (engulfing && hasFoodTarget) {
+            val grippingArc = (foodBias - 0.35f).coerceAtLeast(0f) / 0.65f
+            val lobePulse = 0.35f + 0.65f * sin(phase * 6f - angle * 2f).coerceAtLeast(0f)
+            0.34f * engulfProgress.coerceIn(0f, 1f) * grippingArc * lobePulse
+        } else {
+            0f
+        }
+        val engulfStretch = if (engulfing) {
+            0.1f * (0.5f + 0.5f * sin(phase * 4f + angle))
+        } else {
+            0f
+        }
 
-        val radius = baseRadius * (1f + pseudoPodPulse + pseudoPodNoise + frontStretch + engulfStretch)
+        val radius = baseRadius * (1f + pseudoPodPulse + pseudoPodNoise + frontStretch + engulfStretch + pseudoPodGrip)
         val x = center.x + radius * cos(angle).toFloat()
         val y = center.y + radius * sin(angle).toFloat()
 
