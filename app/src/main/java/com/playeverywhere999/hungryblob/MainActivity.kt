@@ -37,6 +37,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.playeverywhere999.hungryblob.ui.theme.HungryBlobTheme
 import kotlin.math.PI
 import kotlin.math.cos
+import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sin
 import kotlin.math.sqrt
@@ -239,6 +240,7 @@ fun AmoebaGame() {
         val foodRadius = blobRadius * 0.25f
         val botRadius = blobRadius
         val jellyRadius = blobRadius * 0.9f
+        val foodSpawnClearance = max(foodRadius, botRadius * 0.82f)
         if (bots.isEmpty()) {
             bots = List(BOT_AMOEBA_COUNT) { idx ->
                 val headingAngle = Random.nextFloat() * 2f * PI.toFloat()
@@ -285,7 +287,7 @@ fun AmoebaGame() {
                     id = nextFoodId++,
                     position = randomFoodPosition(
                         worldSize = worldSize,
-                        padding = foodRadius,
+                        padding = foodSpawnClearance,
                         blobPos = blobPos,
                         minDistanceFromBlob = blobRadius * 2.8f,
                         obstacles = obstacles
@@ -494,7 +496,7 @@ fun AmoebaGame() {
                     id = nextFoodId++,
                     position = randomFoodPosition(
                         worldSize = worldSize,
-                        padding = foodRadius,
+                        padding = foodSpawnClearance,
                         blobPos = blobPos,
                         minDistanceFromBlob = min(worldSize.width, worldSize.height) * 0.35f,
                         obstacles = obstacles
@@ -586,7 +588,7 @@ fun AmoebaGame() {
                         id = nextFoodId++,
                         position = randomFoodPosition(
                             worldSize = worldSize,
-                            padding = foodRadius,
+                            padding = foodSpawnClearance,
                             blobPos = blobPos,
                             minDistanceFromBlob = min(worldSize.width, worldSize.height) * 0.35f,
                             obstacles = obstacles
@@ -666,8 +668,33 @@ private fun DrawScope.drawPoisonJellyfish(center: Offset, radius: Float, phase: 
     }
 
     val eyeCenter = center + Offset(0f, -radius * 0.06f)
+    val blinkWave = sin(phase * 2f * PI.toFloat() * 0.85f).toFloat()
+    val blinkAmount = if (blinkWave > 0.93f) ((blinkWave - 0.93f) / 0.07f).coerceIn(0f, 1f) else 0f
+    val eyeOpen = (1f - blinkAmount).coerceIn(0.08f, 1f)
     drawCircle(Color.White, eyeRadius, eyeCenter)
-    drawCircle(Color(0xFF230E3E), eyeRadius * 0.52f, eyeCenter + Offset(0f, eyeRadius * 0.1f))
+    drawCircle(
+        Color(0xFF230E3E),
+        eyeRadius * 0.52f * eyeOpen,
+        eyeCenter + Offset(0f, eyeRadius * 0.1f * eyeOpen)
+    )
+    val eyelidHeight = eyeRadius * (0.15f + 0.78f * blinkAmount)
+    drawOval(
+        color = Color(0xFF8D4AD9),
+        topLeft = Offset(eyeCenter.x - eyeRadius, eyeCenter.y - eyeRadius),
+        size = Size(eyeRadius * 2f, eyelidHeight)
+    )
+    repeat(4) { lash ->
+        val t = lash / 3f
+        val baseX = eyeCenter.x - eyeRadius * 0.75f + t * eyeRadius * 1.5f
+        val baseY = eyeCenter.y - eyeRadius + eyelidHeight * 0.15f
+        val lashTilt = (t - 0.5f) * eyeRadius * 0.28f
+        drawLine(
+            color = Color(0xFFD8C3FF),
+            start = Offset(baseX, baseY),
+            end = Offset(baseX + lashTilt, baseY - eyeRadius * (0.32f + 0.45f * (1f - blinkAmount))),
+            strokeWidth = radius * 0.03f
+        )
+    }
 }
 
 private fun botColor(index: Int): Color =
