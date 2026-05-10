@@ -37,7 +37,7 @@ import kotlin.math.sin
 import kotlin.math.sqrt
 import kotlin.random.Random
 
-private data class FoodParticle(val position: Offset, val velocity: Offset)
+private data class FoodParticle(val id: Long, val position: Offset, val velocity: Offset)
 private data class ObstacleRect(val left: Float, val top: Float, val right: Float, val bottom: Float)
 
 private const val FOOD_PARTICLE_COUNT = 400
@@ -69,8 +69,10 @@ fun AmoebaGame() {
     var cameraTopLeft by remember { mutableStateOf(Offset.Zero) }
     var foods by remember { mutableStateOf(emptyList<FoodParticle>()) }
     var vacuoleProgress by remember { mutableStateOf(0f) }
+    var consumedFoodId by remember { mutableStateOf<Long?>(null) }
     var moveTarget by remember { mutableStateOf<Offset?>(null) }
     var moveHeading by remember { mutableStateOf(Offset(1f, 0f)) }
+    var nextFoodId by remember { mutableStateOf(1L) }
 
     Canvas(
         modifier = Modifier
@@ -146,13 +148,21 @@ fun AmoebaGame() {
         }
 
         val nearestFood = foods.minByOrNull { (it.position - blobPos).getDistance() }
-        val reachedFood = nearestFood != null && (nearestFood.position - blobPos).getDistance() < blobRadius * 0.8f
+        val candidateFoodToConsume = when {
+            consumedFoodId != null -> foods.firstOrNull { it.id == consumedFoodId }
+            nearestFood != null && (nearestFood.position - blobPos).getDistance() < blobRadius * 0.8f -> nearestFood
+            else -> null
+        }
 
-        if (!reachedFood) {
+        if (candidateFoodToConsume == null) {
             vacuoleProgress = 0f
+            consumedFoodId = null
         } else {
+            consumedFoodId = candidateFoodToConsume.id
             vacuoleProgress = (vacuoleProgress + 0.015f).coerceAtMost(1f)
         }
+
+        val reachedFood = candidateFoodToConsume != null
 
         val foodRadius = blobRadius * 0.25f
 
@@ -160,6 +170,7 @@ fun AmoebaGame() {
             val missing = FOOD_PARTICLE_COUNT - foods.size
             foods = foods + List(missing) {
                 FoodParticle(
+                    id = nextFoodId++,
                     position = randomFoodPosition(
                         worldSize = worldSize,
                         padding = foodRadius,
@@ -239,6 +250,7 @@ fun AmoebaGame() {
             }
 
             FoodParticle(
+                id = food.id,
                 position = nextPosition,
                 velocity = finalVelocity
             )
@@ -260,11 +272,12 @@ fun AmoebaGame() {
         drawEyes(blobPos - cameraTopLeft, blobRadius, direction)
 
         if (reachedFood || vacuoleProgress > 0f) {
-            val eatenFoodPos = nearestFood?.position ?: blobPos
+            val eatenFoodPos = candidateFoodToConsume?.position ?: blobPos
             drawVacuole(eatenFoodPos - cameraTopLeft, blobRadius * 0.7f, vacuoleProgress)
             if (vacuoleProgress >= 1f) {
-                if (nearestFood != null) {
-                    foods = foods - nearestFood + FoodParticle(
+                if (consumedFoodId != null) {
+                    foods = foods.filterNot { it.id == consumedFoodId } + FoodParticle(
+                        id = nextFoodId++,
                         position = randomFoodPosition(
                             worldSize = worldSize,
                             padding = foodRadius,
@@ -275,6 +288,7 @@ fun AmoebaGame() {
                         velocity = Offset.Zero
                     )
                 }
+                consumedFoodId = null
                 vacuoleProgress = 0f
             }
         }
