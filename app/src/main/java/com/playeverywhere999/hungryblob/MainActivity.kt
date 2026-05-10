@@ -30,11 +30,12 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.tooling.preview.Preview
 import com.playeverywhere999.hungryblob.ui.theme.HungryBlobTheme
 import kotlin.math.PI
-import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.min
 import kotlin.math.sin
 import kotlin.math.sqrt
+
+private data class FoodParticle(val position: Offset, val velocity: Offset)
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -60,7 +61,16 @@ fun AmoebaGame() {
     )
 
     var blobPos by remember { mutableStateOf(Offset(400f, 700f)) }
-    var foodPos by remember { mutableStateOf(Offset(800f, 1000f)) }
+    var foods by remember {
+        mutableStateOf(
+            List(7) { index ->
+                FoodParticle(
+                    position = Offset(220f + index * 130f, 540f + (index % 3) * 170f),
+                    velocity = Offset.Zero
+                )
+            }
+        )
+    }
     var vacuoleProgress by remember { mutableStateOf(0f) }
 
     Canvas(
@@ -69,37 +79,106 @@ fun AmoebaGame() {
             .background(Color(0xFF071923))
             .pointerInput(Unit) {
                 detectTapGestures { tap ->
-                    foodPos = tap
+                    foods = foods + FoodParticle(position = tap, velocity = Offset.Zero)
                 }
             }
     ) {
         val speed = with(density) { 2.5f }
-        val toFood = foodPos - blobPos
+        val nearestFood = foods.minByOrNull { (it.position - blobPos).getDistance() }
+        val toFood = nearestFood?.position?.minus(blobPos) ?: Offset.Zero
         val distance = toFood.getDistance()
-        val direction = if (distance > 0.001f) toFood / distance else Offset.Zero
+        val direction = if (distance > 0.001f) toFood / distance else Offset(1f, 0f)
 
         val blobRadius = min(size.width, size.height) * 0.09f
-        val reachedFood = distance < blobRadius * 0.8f
+        val reachedFood = nearestFood != null && distance < blobRadius * 0.8f
+
+        val safePadding = blobRadius * 0.7f
+        val toCenter = Offset(size.width * 0.5f, size.height * 0.5f) - blobPos
+        val nearLeft = blobPos.x < safePadding
+        val nearRight = blobPos.x > size.width - safePadding
+        val nearTop = blobPos.y < safePadding
+        val nearBottom = blobPos.y > size.height - safePadding
+        val wallEscape = if (nearLeft || nearRight || nearTop || nearBottom) {
+            val d = toCenter.getDistance().coerceAtLeast(0.001f)
+            toCenter / d
+        } else {
+            Offset.Zero
+        }
+        val steering = if (wallEscape.getDistance() > 0f) {
+            (direction + wallEscape * 0.9f).normalized()
+        } else {
+            direction
+        }
 
         if (!reachedFood) {
-            blobPos += direction * speed
+            val moved = blobPos + steering * speed
+            blobPos = Offset(
+                x = moved.x.coerceIn(blobRadius * 0.5f, size.width - blobRadius * 0.5f),
+                y = moved.y.coerceIn(blobRadius * 0.5f, size.height - blobRadius * 0.5f)
+            )
             vacuoleProgress = 0f
         } else {
             vacuoleProgress = (vacuoleProgress + 0.015f).coerceAtMost(1f)
         }
 
-        drawCircle(color = Color(0xFFE5A55E), radius = blobRadius * 0.25f, center = foodPos, alpha = 1f - vacuoleProgress)
+        val foodRadius = blobRadius * 0.25f
+
+        foods = foods.mapIndexed { index, food ->
+            val away = food.position - blobPos
+            val d = away.getDistance().coerceAtLeast(0.001f)
+            val escapeDir = away / d
+            val panic = ((blobRadius * 3.2f - d) / (blobRadius * 3.2f)).coerceIn(0f, 1f)
+            val accel = escapeDir * (panic * 1.4f)
+
+            val jitterPhase = morphPhase * 2.8f + index * 1.7f
+            val brownian = Offset(
+                x = sin(jitterPhase).toFloat(),
+                y = cos(jitterPhase * 1.23f + index).toFloat()
+            ) * 0.22f
+
+            val damped = (food.velocity + accel + brownian) * 0.93f
+            val moved = food.position + damped
+
+            val hitX = moved.x <= foodRadius || moved.x >= size.width - foodRadius
+            val hitY = moved.y <= foodRadius || moved.y >= size.height - foodRadius
+            val bouncedVelocity = Offset(
+                x = if (hitX) -damped.x * 0.82f else damped.x,
+                y = if (hitY) -damped.y * 0.82f else damped.y
+            )
+
+            FoodParticle(
+                position = Offset(
+                    x = moved.x.coerceIn(foodRadius, size.width - foodRadius),
+                    y = moved.y.coerceIn(foodRadius, size.height - foodRadius)
+                ),
+                velocity = bouncedVelocity
+            )
+        }
+
+        foods.forEach { food ->
+            drawCircle(color = Color(0xFFE5A55E), radius = foodRadius, center = food.position)
+        }
 
         drawAmoebaBody(blobPos, blobRadius, morphPhase, direction, reachedFood)
         drawEyes(blobPos, blobRadius, direction)
 
         if (reachedFood || vacuoleProgress > 0f) {
-            drawVacuole(foodPos, blobRadius * 0.7f, vacuoleProgress)
+            val eatenFoodPos = nearestFood?.position ?: blobPos
+            drawVacuole(eatenFoodPos, blobRadius * 0.7f, vacuoleProgress)
             if (vacuoleProgress >= 1f) {
-                foodPos = Offset(
-                    x = size.width * (0.15f + 0.7f * ((sin(morphPhase * 1.3f) + 1f) / 2f)),
-                    y = size.height * (0.18f + 0.65f * ((cos(morphPhase * 1.7f) + 1f) / 2f))
-                )
+                if (nearestFood != null) foods = foods - nearestFood
+                if (foods.size < 7) {
+                    foods = foods + FoodParticle(
+                        position = pickSpawnPosition(
+                            worldSize = size,
+                            blobPos = blobPos,
+                            padding = foodRadius,
+                            phase = morphPhase,
+                            seed = foods.size
+                        ),
+                        velocity = Offset.Zero
+                    )
+                }
                 vacuoleProgress = 0f
             }
         }
@@ -168,11 +247,47 @@ private fun DrawScope.drawVacuole(center: Offset, radius: Float, progress: Float
     )
 }
 
+private fun pickSpawnPosition(
+    worldSize: Size,
+    blobPos: Offset,
+    padding: Float,
+    phase: Float,
+    seed: Int
+): Offset {
+    val center = Offset(worldSize.width * 0.5f, worldSize.height * 0.5f)
+    val minBlobDistance = min(worldSize.width, worldSize.height) * 0.28f
+
+    for (step in 0 until 14) {
+        val t = phase + seed * 0.91f + step * 0.73f
+        val candidate = Offset(
+            x = worldSize.width * (0.15f + 0.7f * ((sin(t * 1.11f) + 1f) * 0.5f)),
+            y = worldSize.height * (0.15f + 0.7f * ((cos(t * 1.37f) + 1f) * 0.5f))
+        )
+        val safe = candidate.x > padding * 2f && candidate.x < worldSize.width - padding * 2f &&
+            candidate.y > padding * 2f && candidate.y < worldSize.height - padding * 2f
+
+        val cornerBlockX = worldSize.width * 0.22f
+        val cornerBlockY = worldSize.height * 0.22f
+        val inLeft = candidate.x < cornerBlockX
+        val inRight = candidate.x > worldSize.width - cornerBlockX
+        val inTop = candidate.y < cornerBlockY
+        val inBottom = candidate.y > worldSize.height - cornerBlockY
+        val isCornerZone = (inLeft || inRight) && (inTop || inBottom)
+
+        if (safe && !isCornerZone && (candidate - blobPos).getDistance() >= minBlobDistance) return candidate
+    }
+    return center
+}
+
 private operator fun Offset.plus(other: Offset): Offset = Offset(x + other.x, y + other.y)
 private operator fun Offset.minus(other: Offset): Offset = Offset(x - other.x, y - other.y)
 private operator fun Offset.times(value: Float): Offset = Offset(x * value, y * value)
 private operator fun Offset.div(value: Float): Offset = Offset(x / value, y / value)
 private fun Offset.getDistance(): Float = sqrt(x * x + y * y)
+private fun Offset.normalized(): Offset {
+    val d = getDistance()
+    return if (d > 0.001f) this / d else Offset.Zero
+}
 
 @Preview(showBackground = true)
 @Composable
