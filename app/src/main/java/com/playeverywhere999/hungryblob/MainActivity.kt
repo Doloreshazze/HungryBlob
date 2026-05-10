@@ -190,10 +190,43 @@ fun AmoebaGame() {
                 y = moved.y.coerceIn(foodRadius, worldSize.height - foodRadius)
             )
             val blockedByLetter = collidesWithObstacles(clamped, foodRadius, obstacles)
-            val finalVelocity = if (blockedByLetter) worldBounced * -0.78f else worldBounced
+
+            val nextPosition: Offset
+            val finalVelocity: Offset
+            if (!blockedByLetter) {
+                nextPosition = clamped
+                finalVelocity = worldBounced
+            } else {
+                val slideX = Offset(
+                    x = clamped.x,
+                    y = food.position.y.coerceIn(foodRadius, worldSize.height - foodRadius)
+                )
+                val slideY = Offset(
+                    x = food.position.x.coerceIn(foodRadius, worldSize.width - foodRadius),
+                    y = clamped.y
+                )
+
+                val canSlideX = !collidesWithObstacles(slideX, foodRadius, obstacles)
+                val canSlideY = !collidesWithObstacles(slideY, foodRadius, obstacles)
+
+                when {
+                    canSlideX && (!canSlideY || kotlin.math.abs(worldBounced.x) >= kotlin.math.abs(worldBounced.y)) -> {
+                        nextPosition = slideX
+                        finalVelocity = Offset(worldBounced.x, 0f)
+                    }
+                    canSlideY -> {
+                        nextPosition = slideY
+                        finalVelocity = Offset(0f, worldBounced.y)
+                    }
+                    else -> {
+                        nextPosition = food.position
+                        finalVelocity = worldBounced * -0.45f
+                    }
+                }
+            }
 
             FoodParticle(
-                position = if (blockedByLetter) food.position else clamped,
+                position = nextPosition,
                 velocity = finalVelocity
             )
         }
