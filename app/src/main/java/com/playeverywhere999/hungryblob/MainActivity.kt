@@ -44,6 +44,14 @@ import kotlin.random.Random
 
 private data class FoodParticle(val id: Long, val position: Offset, val velocity: Offset)
 private data class ObstacleRect(val left: Float, val top: Float, val right: Float, val bottom: Float)
+private data class BotAmoeba(
+    val id: Int,
+    val position: Offset,
+    val heading: Offset,
+    val color: Color,
+    val consumedFoodId: Long? = null,
+    val vacuoleProgress: Float = 0f
+)
 private data class GameSnapshot(
     val blobPos: Offset,
     val foods: List<FoodParticle>,
@@ -54,6 +62,7 @@ private data class GameSnapshot(
 )
 
 private const val FOOD_PARTICLE_COUNT = 400
+private const val BOT_AMOEBA_COUNT = 60
 private const val GAME_PREFS = "hungry_blob_save"
 private const val GAME_STATE_KEY = "state_v1"
 
@@ -100,6 +109,7 @@ fun AmoebaGame() {
     var moveTarget by remember { mutableStateOf<Offset?>(null) }
     var moveHeading by remember { mutableStateOf(initialSnapshot.moveHeading) }
     var nextFoodId by remember { mutableStateOf(initialSnapshot.nextFoodId) }
+    var bots by remember { mutableStateOf(emptyList<BotAmoeba>()) }
 
     DisposableEffect(lifecycleOwner, blobPos, foods, vacuoleProgress, consumedFoodId, moveHeading, nextFoodId) {
         val observer = object : DefaultLifecycleObserver {
@@ -214,6 +224,26 @@ fun AmoebaGame() {
         val reachedFood = candidateFoodToConsume != null
 
         val foodRadius = blobRadius * 0.25f
+        val botRadius = blobRadius
+        if (bots.isEmpty()) {
+            bots = List(BOT_AMOEBA_COUNT) { idx ->
+                val headingAngle = Random.nextFloat() * 2f * PI.toFloat()
+                BotAmoeba(
+                    id = idx,
+                    position = randomFoodPosition(
+                        worldSize = worldSize,
+                        padding = botRadius + movementPadding,
+                        blobPos = blobPos,
+                        minDistanceFromBlob = blobRadius * 3.5f,
+                        obstacles = obstacles
+                    ),
+                    heading = Offset(cos(headingAngle), sin(headingAngle)),
+                    color = botColor(idx),
+                    consumedFoodId = null,
+                    vacuoleProgress = 0f
+                )
+            }
+        }
 
         if (foods.size < FOOD_PARTICLE_COUNT) {
             val missing = FOOD_PARTICLE_COUNT - foods.size
@@ -233,7 +263,12 @@ fun AmoebaGame() {
         }
 
         foods = foods.map { food ->
-            val away = food.position - blobPos
+            val botThreat = bots.minByOrNull { (food.position - it.position).getDistance() }?.position
+            val playerDistance = (food.position - blobPos).getDistance()
+            val botDistance = botThreat?.let { (food.position - it).getDistance() } ?: Float.MAX_VALUE
+            val threatPos = if (playerDistance <= botDistance) blobPos else botThreat
+
+            val away = if (threatPos != null) food.position - threatPos else Offset.Zero
             val d = away.getDistance().coerceAtLeast(0.001f)
             val escapeDir = away / d
             val panic = ((blobRadius * 3.2f - d) / (blobRadius * 3.2f)).coerceIn(0f, 1f)
@@ -305,6 +340,78 @@ fun AmoebaGame() {
             )
         }
 
+        bots = bots.map { bot ->
+            val nearest = foods.minByOrNull { (it.position - bot.position).getDistance() }
+            val botDirection = if (nearest != null) {
+                val toFood = nearest.position - bot.position
+                val dist = toFood.getDistance()
+                if (dist > 0.001f) toFood / dist else bot.heading
+            } else {
+                bot.heading
+            }
+            val botSpeed = speed * 0.88f
+            val moved = moveWithSliding(
+                current = bot.position,
+                velocity = botDirection * botSpeed,
+                radius = botRadius,
+                obstacles = obstacles,
+                worldSize = worldSize,
+                padding = movementPadding
+            )
+            val isStuck = (moved - bot.position).getDistance() < 0.2f
+            if (isStuck) {
+                val randomAngle = Random.nextFloat() * 2f * PI.toFloat()
+                val escapeHeading = Offset(cos(randomAngle), sin(randomAngle))
+                val escaped = moveWithSliding(
+                    current = bot.position,
+                    velocity = escapeHeading * (botSpeed * 1.3f),
+                    radius = botRadius,
+                    obstacles = obstacles,
+                    worldSize = worldSize,
+                    padding = movementPadding
+                )
+                bot.copy(position = escaped, heading = escapeHeading, color = bot.color)
+            } else {
+                bot.copy(position = moved, heading = botDirection, color = bot.color)
+            }
+        }
+
+        val foodsToRemoveByBots = mutableSetOf<Long>()
+        bots = bots.map { bot ->
+            val nearest = foods.minByOrNull { (it.position - bot.position).getDistance() }
+            val candidateFood = when {
+                bot.consumedFoodId != null -> foods.firstOrNull { it.id == bot.consumedFoodId }
+                nearest != null && (nearest.position - bot.position).getDistance() < blobRadius * 0.8f -> nearest
+                else -> null
+            }
+            if (candidateFood == null) {
+                bot.copy(consumedFoodId = null, vacuoleProgress = 0f)
+            } else {
+                val nextProgress = (bot.vacuoleProgress + 0.015f).coerceAtMost(1f)
+                if (nextProgress >= 1f) {
+                    foodsToRemoveByBots += candidateFood.id
+                    bot.copy(consumedFoodId = null, vacuoleProgress = 0f)
+                } else {
+                    bot.copy(consumedFoodId = candidateFood.id, vacuoleProgress = nextProgress)
+                }
+            }
+        }
+        if (foodsToRemoveByBots.isNotEmpty()) {
+            foods = foods.filterNot { it.id in foodsToRemoveByBots } + List(foodsToRemoveByBots.size) {
+                FoodParticle(
+                    id = nextFoodId++,
+                    position = randomFoodPosition(
+                        worldSize = worldSize,
+                        padding = foodRadius,
+                        blobPos = blobPos,
+                        minDistanceFromBlob = min(worldSize.width, worldSize.height) * 0.35f,
+                        obstacles = obstacles
+                    ),
+                    velocity = Offset.Zero
+                )
+            }
+        }
+
         obstacles.forEach { obstacle ->
             drawRect(
                 color = Color(0xFF2B6F7F),
@@ -315,6 +422,26 @@ fun AmoebaGame() {
 
         foods.forEach { food ->
             drawCircle(color = Color(0xFFE5A55E), radius = foodRadius, center = food.position - cameraTopLeft)
+        }
+
+        bots.forEach { bot ->
+            drawAmoebaBody(
+                center = bot.position - cameraTopLeft,
+                baseRadius = blobRadius,
+                morphProgress = (morphProgress + bot.id * 0.17f) % 1f,
+                direction = bot.heading,
+                engulfing = bot.consumedFoodId != null || bot.vacuoleProgress > 0f,
+                foodScreenPosition = foods.firstOrNull { it.id == bot.consumedFoodId }?.position?.minus(cameraTopLeft),
+                engulfProgress = bot.vacuoleProgress,
+                bodyColor = bot.color
+            )
+            drawEyes(
+                center = bot.position - cameraTopLeft,
+                radius = blobRadius,
+                direction = bot.heading,
+                spinning = bot.consumedFoodId != null || bot.vacuoleProgress > 0f,
+                spinPhase = morphProgress
+            )
         }
 
         val consumedFoodScreenPos = candidateFoodToConsume?.position?.minus(cameraTopLeft)
@@ -364,7 +491,8 @@ private fun DrawScope.drawAmoebaBody(
     direction: Offset,
     engulfing: Boolean,
     foodScreenPosition: Offset?,
-    engulfProgress: Float
+    engulfProgress: Float,
+    bodyColor: Color = Color(0xFF83E7A0)
 ) {
     val path = Path()
     val points = 48
@@ -403,8 +531,15 @@ private fun DrawScope.drawAmoebaBody(
     }
     path.close()
 
-    drawPath(path = path, color = Color(0xFF83E7A0))
+    drawPath(path = path, color = bodyColor)
 }
+
+private fun botColor(index: Int): Color =
+    Color.hsv(
+        hue = (index * (360f / BOT_AMOEBA_COUNT)) % 360f,
+        saturation = 0.55f,
+        value = 0.95f
+    )
 
 private fun DrawScope.drawEyes(
     center: Offset,
