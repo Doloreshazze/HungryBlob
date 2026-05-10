@@ -72,6 +72,8 @@ private data class GameSnapshot(
 private const val FOOD_PARTICLE_COUNT = 400
 private const val BOT_AMOEBA_COUNT = 60
 private const val POISON_JELLYFISH_COUNT = 60
+private const val BOT_SOFT_REPEL_RANGE_FACTOR = 1.85f
+private const val BOT_SOFT_REPEL_STRENGTH = 0.14f
 private const val GAME_PREFS = "hungry_blob_save"
 private const val GAME_STATE_KEY = "state_v1"
 
@@ -401,12 +403,28 @@ fun AmoebaGame() {
 
         bots = bots.map { bot ->
             val nearest = foods.minByOrNull { (it.position - bot.position).getDistance() }
-            val botDirection = if (nearest != null) {
+            val chaseDirection = if (nearest != null) {
                 val toFood = nearest.position - bot.position
                 val dist = toFood.getDistance()
                 if (dist > 0.001f) toFood / dist else bot.heading
             } else {
                 bot.heading
+            }
+            val repelRange = botRadius * BOT_SOFT_REPEL_RANGE_FACTOR
+            val repelForce = bots.fold(Offset.Zero) { acc, other ->
+                if (other.id == bot.id) {
+                    acc
+                } else {
+                    val delta = bot.position - other.position
+                    val distance = delta.getDistance()
+                    if (distance > 0.001f && distance < repelRange) {
+                        val strength = ((repelRange - distance) / repelRange) * BOT_SOFT_REPEL_STRENGTH
+                        acc + (delta / distance) * strength
+                    } else acc
+                }
+            }
+            val botDirection = (chaseDirection + repelForce).normalized().let {
+                if (it.getDistance() > 0.001f) it else chaseDirection
             }
             val botSpeed = speed * 0.88f
             val moved = moveWithSliding(
