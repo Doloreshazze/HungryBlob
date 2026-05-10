@@ -35,9 +35,12 @@ import kotlin.math.cos
 import kotlin.math.min
 import kotlin.math.sin
 import kotlin.math.sqrt
+import kotlin.random.Random
 
 private data class FoodParticle(val position: Offset, val velocity: Offset)
 private data class ObstacleRect(val left: Float, val top: Float, val right: Float, val bottom: Float)
+
+private const val FOOD_PARTICLE_COUNT = 400
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -64,16 +67,7 @@ fun AmoebaGame() {
 
     var blobPos by remember { mutableStateOf(Offset(400f, 700f)) }
     var cameraTopLeft by remember { mutableStateOf(Offset.Zero) }
-    var foods by remember {
-        mutableStateOf(
-            List(7) { index ->
-                FoodParticle(
-                    position = Offset(220f + index * 130f, 540f + (index % 3) * 170f),
-                    velocity = Offset.Zero
-                )
-            }
-        )
-    }
+    var foods by remember { mutableStateOf(emptyList<FoodParticle>()) }
     var vacuoleProgress by remember { mutableStateOf(0f) }
     var moveTarget by remember { mutableStateOf<Offset?>(null) }
     var moveHeading by remember { mutableStateOf(Offset(1f, 0f)) }
@@ -128,23 +122,27 @@ fun AmoebaGame() {
 
         if (boundedTarget != null && targetDistance > speed) {
             moveHeading = direction
-            val moved = blobPos + moveHeading * speed
-            val candidate = Offset(
-                x = moved.x.coerceIn(movementPadding, worldSize.width - movementPadding),
-                y = moved.y.coerceIn(movementPadding, worldSize.height - movementPadding)
+            blobPos = moveWithSliding(
+                current = blobPos,
+                velocity = moveHeading * speed,
+                radius = blobRadius * 0.75f,
+                obstacles = obstacles,
+                worldSize = worldSize,
+                padding = movementPadding
             )
-            if (!collidesWithObstacles(candidate, blobRadius * 0.75f, obstacles)) blobPos = candidate
         } else if (boundedTarget != null) {
             blobPos = boundedTarget
             moveTarget = null
         } else {
             val drift = if (moveHeading.getDistance() > 0.001f) moveHeading.normalized() else Offset.Zero
-            val moved = blobPos + drift * speed
-            val candidate = Offset(
-                x = moved.x.coerceIn(movementPadding, worldSize.width - movementPadding),
-                y = moved.y.coerceIn(movementPadding, worldSize.height - movementPadding)
+            blobPos = moveWithSliding(
+                current = blobPos,
+                velocity = drift * speed,
+                radius = blobRadius * 0.75f,
+                obstacles = obstacles,
+                worldSize = worldSize,
+                padding = movementPadding
             )
-            if (!collidesWithObstacles(candidate, blobRadius * 0.75f, obstacles)) blobPos = candidate
         }
 
         val nearestFood = foods.minByOrNull { (it.position - blobPos).getDistance() }
@@ -157,6 +155,22 @@ fun AmoebaGame() {
         }
 
         val foodRadius = blobRadius * 0.25f
+
+        if (foods.size < FOOD_PARTICLE_COUNT) {
+            val missing = FOOD_PARTICLE_COUNT - foods.size
+            foods = foods + List(missing) {
+                FoodParticle(
+                    position = randomFoodPosition(
+                        worldSize = worldSize,
+                        padding = foodRadius,
+                        blobPos = blobPos,
+                        minDistanceFromBlob = blobRadius * 2.8f,
+                        obstacles = obstacles
+                    ),
+                    velocity = Offset.Zero
+                )
+            }
+        }
 
         foods = foods.map { food ->
             val away = food.position - blobPos
@@ -180,10 +194,52 @@ fun AmoebaGame() {
                 y = moved.y.coerceIn(foodRadius, worldSize.height - foodRadius)
             )
             val blockedByLetter = collidesWithObstacles(clamped, foodRadius, obstacles)
-            val finalVelocity = if (blockedByLetter) worldBounced * -0.78f else worldBounced
+
+            val nextPosition: Offset
+            val finalVelocity: Offset
+            if (!blockedByLetter) {
+                nextPosition = clamped
+                finalVelocity = worldBounced
+            } else {
+                val xOnlyMoved = Offset(
+                    x = (food.position.x + worldBounced.x).coerceIn(foodRadius, worldSize.width - foodRadius),
+                    y = food.position.y.coerceIn(foodRadius, worldSize.height - foodRadius)
+                )
+                val yOnlyMoved = Offset(
+                    x = food.position.x.coerceIn(foodRadius, worldSize.width - foodRadius),
+                    y = (food.position.y + worldBounced.y).coerceIn(foodRadius, worldSize.height - foodRadius)
+                )
+
+                val canSlideX = !collidesWithObstacles(xOnlyMoved, foodRadius, obstacles)
+                val canSlideY = !collidesWithObstacles(yOnlyMoved, foodRadius, obstacles)
+
+                when {
+                    canSlideX && canSlideY -> {
+                        if (kotlin.math.abs(worldBounced.x) >= kotlin.math.abs(worldBounced.y)) {
+                            nextPosition = xOnlyMoved
+                            finalVelocity = Offset(worldBounced.x, 0f)
+                        } else {
+                            nextPosition = yOnlyMoved
+                            finalVelocity = Offset(0f, worldBounced.y)
+                        }
+                    }
+                    canSlideX -> {
+                        nextPosition = xOnlyMoved
+                        finalVelocity = Offset(worldBounced.x, 0f)
+                    }
+                    canSlideY -> {
+                        nextPosition = yOnlyMoved
+                        finalVelocity = Offset(0f, worldBounced.y)
+                    }
+                    else -> {
+                        nextPosition = food.position
+                        finalVelocity = worldBounced * -0.45f
+                    }
+                }
+            }
 
             FoodParticle(
-                position = if (blockedByLetter) food.position else clamped,
+                position = nextPosition,
                 velocity = finalVelocity
             )
         }
@@ -207,15 +263,14 @@ fun AmoebaGame() {
             val eatenFoodPos = nearestFood?.position ?: blobPos
             drawVacuole(eatenFoodPos - cameraTopLeft, blobRadius * 0.7f, vacuoleProgress)
             if (vacuoleProgress >= 1f) {
-                if (nearestFood != null) foods = foods - nearestFood
-                if (foods.size < 7) {
-                    foods = foods + FoodParticle(
-                        position = pickSpawnPosition(
+                if (nearestFood != null) {
+                    foods = foods - nearestFood + FoodParticle(
+                        position = randomFoodPosition(
                             worldSize = worldSize,
-                            blobPos = blobPos,
                             padding = foodRadius,
-                            phase = morphPhase,
-                            seed = foods.size
+                            blobPos = blobPos,
+                            minDistanceFromBlob = min(worldSize.width, worldSize.height) * 0.35f,
+                            obstacles = obstacles
                         ),
                         velocity = Offset.Zero
                     )
@@ -288,36 +343,65 @@ private fun DrawScope.drawVacuole(center: Offset, radius: Float, progress: Float
     )
 }
 
-private fun pickSpawnPosition(
+private fun randomFoodPosition(
     worldSize: Size,
-    blobPos: Offset,
     padding: Float,
-    phase: Float,
-    seed: Int
+    blobPos: Offset,
+    minDistanceFromBlob: Float,
+    obstacles: List<ObstacleRect>
 ): Offset {
-    val center = Offset(worldSize.width * 0.5f, worldSize.height * 0.5f)
-    val minBlobDistance = min(worldSize.width, worldSize.height) * 0.28f
-
-    for (step in 0 until 14) {
-        val t = phase + seed * 0.91f + step * 0.73f
+    repeat(80) {
         val candidate = Offset(
-            x = worldSize.width * (0.15f + 0.7f * ((sin(t * 1.11f) + 1f) * 0.5f)),
-            y = worldSize.height * (0.15f + 0.7f * ((cos(t * 1.37f) + 1f) * 0.5f))
+            x = Random.nextFloat() * (worldSize.width - padding * 2f) + padding,
+            y = Random.nextFloat() * (worldSize.height - padding * 2f) + padding
         )
-        val safe = candidate.x > padding * 2f && candidate.x < worldSize.width - padding * 2f &&
-            candidate.y > padding * 2f && candidate.y < worldSize.height - padding * 2f
-
-        val cornerBlockX = worldSize.width * 0.22f
-        val cornerBlockY = worldSize.height * 0.22f
-        val inLeft = candidate.x < cornerBlockX
-        val inRight = candidate.x > worldSize.width - cornerBlockX
-        val inTop = candidate.y < cornerBlockY
-        val inBottom = candidate.y > worldSize.height - cornerBlockY
-        val isCornerZone = (inLeft || inRight) && (inTop || inBottom)
-
-        if (safe && !isCornerZone && (candidate - blobPos).getDistance() >= minBlobDistance) return candidate
+        val farFromBlob = (candidate - blobPos).getDistance() >= minDistanceFromBlob
+        if (farFromBlob && !collidesWithObstacles(candidate, padding, obstacles)) return candidate
     }
-    return center
+    repeat(40) {
+        val fallback = Offset(
+            x = Random.nextFloat() * (worldSize.width - padding * 2f) + padding,
+            y = Random.nextFloat() * (worldSize.height - padding * 2f) + padding
+        )
+        if (!collidesWithObstacles(fallback, padding, obstacles)) return fallback
+    }
+
+    return Offset(worldSize.width * 0.5f, worldSize.height * 0.5f)
+}
+
+private fun moveWithSliding(
+    current: Offset,
+    velocity: Offset,
+    radius: Float,
+    obstacles: List<ObstacleRect>,
+    worldSize: Size,
+    padding: Float
+): Offset {
+    val target = Offset(
+        x = (current.x + velocity.x).coerceIn(padding, worldSize.width - padding),
+        y = (current.y + velocity.y).coerceIn(padding, worldSize.height - padding)
+    )
+
+    if (!collidesWithObstacles(target, radius, obstacles)) return target
+
+    val xOnly = Offset(
+        x = (current.x + velocity.x).coerceIn(padding, worldSize.width - padding),
+        y = current.y.coerceIn(padding, worldSize.height - padding)
+    )
+    val yOnly = Offset(
+        x = current.x.coerceIn(padding, worldSize.width - padding),
+        y = (current.y + velocity.y).coerceIn(padding, worldSize.height - padding)
+    )
+
+    val canSlideX = !collidesWithObstacles(xOnly, radius, obstacles)
+    val canSlideY = !collidesWithObstacles(yOnly, radius, obstacles)
+
+    return when {
+        canSlideX && canSlideY -> if (kotlin.math.abs(velocity.x) >= kotlin.math.abs(velocity.y)) xOnly else yOnly
+        canSlideX -> xOnly
+        canSlideY -> yOnly
+        else -> current
+    }
 }
 
 private fun collidesWithObstacles(center: Offset, radius: Float, obstacles: List<ObstacleRect>): Boolean =
