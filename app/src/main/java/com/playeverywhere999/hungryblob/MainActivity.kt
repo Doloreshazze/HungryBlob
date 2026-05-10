@@ -44,6 +44,7 @@ import kotlin.random.Random
 
 private data class FoodParticle(val id: Long, val position: Offset, val velocity: Offset)
 private data class ObstacleRect(val left: Float, val top: Float, val right: Float, val bottom: Float)
+private data class BotAmoeba(val id: Int, val position: Offset, val heading: Offset)
 private data class GameSnapshot(
     val blobPos: Offset,
     val foods: List<FoodParticle>,
@@ -54,6 +55,7 @@ private data class GameSnapshot(
 )
 
 private const val FOOD_PARTICLE_COUNT = 400
+private const val BOT_AMOEBA_COUNT = 4
 private const val GAME_PREFS = "hungry_blob_save"
 private const val GAME_STATE_KEY = "state_v1"
 
@@ -100,6 +102,17 @@ fun AmoebaGame() {
     var moveTarget by remember { mutableStateOf<Offset?>(null) }
     var moveHeading by remember { mutableStateOf(initialSnapshot.moveHeading) }
     var nextFoodId by remember { mutableStateOf(initialSnapshot.nextFoodId) }
+    var bots by remember {
+        mutableStateOf(
+            List(BOT_AMOEBA_COUNT) { idx ->
+                BotAmoeba(
+                    id = idx,
+                    position = Offset(700f + idx * 220f, 900f + (idx % 2) * 260f),
+                    heading = Offset(1f, 0f)
+                )
+            }
+        )
+    }
 
     DisposableEffect(lifecycleOwner, blobPos, foods, vacuoleProgress, consumedFoodId, moveHeading, nextFoodId) {
         val observer = object : DefaultLifecycleObserver {
@@ -214,6 +227,7 @@ fun AmoebaGame() {
         val reachedFood = candidateFoodToConsume != null
 
         val foodRadius = blobRadius * 0.25f
+        val botRadius = blobRadius * 0.75f
 
         if (foods.size < FOOD_PARTICLE_COUNT) {
             val missing = FOOD_PARTICLE_COUNT - foods.size
@@ -305,6 +319,36 @@ fun AmoebaGame() {
             )
         }
 
+        bots = bots.map { bot ->
+            val nearest = foods.minByOrNull { (it.position - bot.position).getDistance() }
+            val botDirection = if (nearest != null) {
+                val toFood = nearest.position - bot.position
+                val dist = toFood.getDistance()
+                if (dist > 0.001f) toFood / dist else bot.heading
+            } else {
+                bot.heading
+            }
+            val botSpeed = speed * 0.88f
+            val moved = moveWithSliding(
+                current = bot.position,
+                velocity = botDirection * botSpeed,
+                radius = botRadius,
+                obstacles = obstacles,
+                worldSize = worldSize,
+                padding = movementPadding
+            )
+            bot.copy(position = moved, heading = botDirection)
+        }
+
+        val eatenByBots = bots.mapNotNull { bot ->
+            foods.minByOrNull { (it.position - bot.position).getDistance() }
+                ?.takeIf { (it.position - bot.position).getDistance() < blobRadius * 0.7f }
+                ?.id
+        }.toSet()
+        if (eatenByBots.isNotEmpty()) {
+            foods = foods.filterNot { it.id in eatenByBots }
+        }
+
         obstacles.forEach { obstacle ->
             drawRect(
                 color = Color(0xFF2B6F7F),
@@ -315,6 +359,25 @@ fun AmoebaGame() {
 
         foods.forEach { food ->
             drawCircle(color = Color(0xFFE5A55E), radius = foodRadius, center = food.position - cameraTopLeft)
+        }
+
+        bots.forEach { bot ->
+            drawAmoebaBody(
+                center = bot.position - cameraTopLeft,
+                baseRadius = blobRadius * 0.82f,
+                morphProgress = (morphProgress + bot.id * 0.17f) % 1f,
+                direction = bot.heading,
+                engulfing = false,
+                foodScreenPosition = null,
+                engulfProgress = 0f
+            )
+            drawEyes(
+                center = bot.position - cameraTopLeft,
+                radius = blobRadius * 0.82f,
+                direction = bot.heading,
+                spinning = false,
+                spinPhase = morphProgress
+            )
         }
 
         val consumedFoodScreenPos = candidateFoodToConsume?.position?.minus(cameraTopLeft)
