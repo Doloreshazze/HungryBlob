@@ -21,6 +21,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
@@ -137,12 +138,20 @@ fun AmoebaGame() {
 
             val damped = (food.velocity + accel + brownian) * 0.93f
             val moved = food.position + damped
+
+            val hitX = moved.x <= foodRadius || moved.x >= size.width - foodRadius
+            val hitY = moved.y <= foodRadius || moved.y >= size.height - foodRadius
+            val bouncedVelocity = Offset(
+                x = if (hitX) -damped.x * 0.82f else damped.x,
+                y = if (hitY) -damped.y * 0.82f else damped.y
+            )
+
             FoodParticle(
                 position = Offset(
                     x = moved.x.coerceIn(foodRadius, size.width - foodRadius),
                     y = moved.y.coerceIn(foodRadius, size.height - foodRadius)
                 ),
-                velocity = damped
+                velocity = bouncedVelocity
             )
         }
 
@@ -159,11 +168,13 @@ fun AmoebaGame() {
             if (vacuoleProgress >= 1f) {
                 if (nearestFood != null) foods = foods - nearestFood
                 if (foods.size < 7) {
-                    val phaseSeed = morphPhase + foods.size
                     foods = foods + FoodParticle(
-                        position = Offset(
-                            x = size.width * (0.12f + 0.76f * ((sin(phaseSeed * 1.3f) + 1f) / 2f)),
-                            y = size.height * (0.15f + 0.72f * ((cos(phaseSeed * 1.7f) + 1f) / 2f))
+                        position = pickSpawnPosition(
+                            worldSize = size,
+                            blobPos = blobPos,
+                            padding = foodRadius,
+                            phase = morphPhase,
+                            seed = foods.size
                         ),
                         velocity = Offset.Zero
                     )
@@ -234,6 +245,29 @@ private fun DrawScope.drawVacuole(center: Offset, radius: Float, progress: Float
         radius = r * 0.65f,
         center = center
     )
+}
+
+private fun pickSpawnPosition(
+    worldSize: Size,
+    blobPos: Offset,
+    padding: Float,
+    phase: Float,
+    seed: Int
+): Offset {
+    val center = Offset(worldSize.width * 0.5f, worldSize.height * 0.5f)
+    val minBlobDistance = min(worldSize.width, worldSize.height) * 0.28f
+
+    for (step in 0 until 14) {
+        val t = phase + seed * 0.91f + step * 0.73f
+        val candidate = Offset(
+            x = worldSize.width * (0.15f + 0.7f * ((sin(t * 1.11f) + 1f) * 0.5f)),
+            y = worldSize.height * (0.15f + 0.7f * ((cos(t * 1.37f) + 1f) * 0.5f))
+        )
+        val safe = candidate.x > padding * 2f && candidate.x < worldSize.width - padding * 2f &&
+            candidate.y > padding * 2f && candidate.y < worldSize.height - padding * 2f
+        if (safe && (candidate - blobPos).getDistance() >= minBlobDistance) return candidate
+    }
+    return center
 }
 
 private operator fun Offset.plus(other: Offset): Offset = Offset(x + other.x, y + other.y)
