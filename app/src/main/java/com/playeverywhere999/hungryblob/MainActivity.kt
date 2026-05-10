@@ -327,11 +327,15 @@ fun AmoebaGame() {
             foodScreenPosition = consumedFoodScreenPos,
             engulfProgress = vacuoleProgress
         )
-        drawEyes(blobPos - cameraTopLeft, blobRadius, direction)
+        drawEyes(
+            center = blobPos - cameraTopLeft,
+            radius = blobRadius,
+            direction = direction,
+            spinning = reachedFood || vacuoleProgress > 0f,
+            spinPhase = morphProgress
+        )
 
         if (reachedFood || vacuoleProgress > 0f) {
-            val eatenFoodPos = candidateFoodToConsume?.position ?: blobPos
-            drawVacuole(eatenFoodPos - cameraTopLeft, blobRadius * 0.7f, vacuoleProgress)
             if (vacuoleProgress >= 1f) {
                 if (consumedFoodId != null) {
                     foods = foods.filterNot { it.id == consumedFoodId } + FoodParticle(
@@ -403,7 +407,13 @@ private fun DrawScope.drawAmoebaBody(
     drawCircle(color = Color(0xAA57C879), radius = baseRadius * 0.68f, center = center)
 }
 
-private fun DrawScope.drawEyes(center: Offset, radius: Float, direction: Offset) {
+private fun DrawScope.drawEyes(
+    center: Offset,
+    radius: Float,
+    direction: Offset,
+    spinning: Boolean,
+    spinPhase: Float
+) {
     val facing = if (direction.getDistance() > 0.001f) direction else Offset(1f, 0f)
     val side = Offset(-facing.y, facing.x)
 
@@ -411,27 +421,15 @@ private fun DrawScope.drawEyes(center: Offset, radius: Float, direction: Offset)
     val rightEyeCenter = center + facing * (radius * 0.25f) - side * (radius * 0.22f)
 
     val eyeRadius = radius * 0.18f
-    val pupilOffset = facing * (eyeRadius * 0.35f)
+    val idlePupilOffset = facing * (eyeRadius * 0.35f)
+    val spinAngle = spinPhase * 2f * PI.toFloat() * 7f
+    val spinOffset = Offset(cos(spinAngle).toFloat(), sin(spinAngle).toFloat()) * (eyeRadius * 0.38f)
+    val pupilOffset = if (spinning) spinOffset else idlePupilOffset
 
     drawCircle(Color.White, eyeRadius, leftEyeCenter)
     drawCircle(Color.White, eyeRadius, rightEyeCenter)
     drawCircle(Color(0xFF10131A), eyeRadius * 0.42f, leftEyeCenter + pupilOffset)
     drawCircle(Color(0xFF10131A), eyeRadius * 0.42f, rightEyeCenter + pupilOffset)
-}
-
-private fun DrawScope.drawVacuole(center: Offset, radius: Float, progress: Float) {
-    val r = radius * (1f + 0.2f * progress)
-    val alpha = (1f - progress).coerceIn(0f, 1f)
-    drawCircle(
-        color = Color(0xAAFFF0B3).copy(alpha = alpha),
-        radius = r,
-        center = center
-    )
-    drawCircle(
-        color = Color(0x66FFF8D6).copy(alpha = alpha),
-        radius = r * 0.65f,
-        center = center
-    )
 }
 
 private fun randomFoodPosition(
