@@ -84,13 +84,19 @@ fun AmoebaGame() {
             }
     ) {
         val speed = with(density) { 2.5f }
+        val blobRadius = min(size.width, size.height) * 0.09f
         val nearestFood = foods.minByOrNull { (it.position - blobPos).getDistance() }
-        val toFood = nearestFood?.position?.minus(blobPos) ?: Offset.Zero
+        val targetFoodPosition = nearestFood?.position?.let { food ->
+            val margin = blobRadius * 0.9f
+            Offset(
+                x = food.x.coerceIn(margin, size.width - margin),
+                y = food.y.coerceIn(margin, size.height - margin)
+            )
+        }
+        val toFood = targetFoodPosition?.minus(blobPos) ?: Offset.Zero
         val distance = toFood.getDistance()
         val direction = if (distance > 0.001f) toFood / distance else Offset(1f, 0f)
-
-        val blobRadius = min(size.width, size.height) * 0.09f
-        val reachedFood = nearestFood != null && distance < blobRadius * 0.8f
+        val reachedFood = nearestFood != null && (nearestFood.position - blobPos).getDistance() < blobRadius * 0.8f
 
         val safePadding = blobRadius * 0.7f
         val toCenter = Offset(size.width * 0.5f, size.height * 0.5f) - blobPos
@@ -98,14 +104,19 @@ fun AmoebaGame() {
         val nearRight = blobPos.x > size.width - safePadding
         val nearTop = blobPos.y < safePadding
         val nearBottom = blobPos.y > size.height - safePadding
-        val wallEscape = if (nearLeft || nearRight || nearTop || nearBottom) {
+        val cornerPressure = when {
+            (nearLeft || nearRight) && (nearTop || nearBottom) -> 1.35f
+            nearLeft || nearRight || nearTop || nearBottom -> 1f
+            else -> 0f
+        }
+        val wallEscape = if (cornerPressure > 0f) {
             val d = toCenter.getDistance().coerceAtLeast(0.001f)
             toCenter / d
         } else {
             Offset.Zero
         }
         val steering = if (wallEscape.getDistance() > 0f) {
-            (direction + wallEscape * 0.9f).normalized()
+            (direction + wallEscape * (0.9f * cornerPressure)).normalized()
         } else {
             direction
         }
