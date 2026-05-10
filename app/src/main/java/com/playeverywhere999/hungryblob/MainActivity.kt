@@ -36,6 +36,8 @@ import kotlin.math.min
 import kotlin.math.sin
 import kotlin.math.sqrt
 
+private data class FoodParticle(val position: Offset, val velocity: Offset)
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -60,7 +62,16 @@ fun AmoebaGame() {
     )
 
     var blobPos by remember { mutableStateOf(Offset(400f, 700f)) }
-    var foodPos by remember { mutableStateOf(Offset(800f, 1000f)) }
+    var foods by remember {
+        mutableStateOf(
+            List(7) { index ->
+                FoodParticle(
+                    position = Offset(220f + index * 130f, 540f + (index % 3) * 170f),
+                    velocity = Offset.Zero
+                )
+            }
+        )
+    }
     var vacuoleProgress by remember { mutableStateOf(0f) }
 
     Canvas(
@@ -69,17 +80,18 @@ fun AmoebaGame() {
             .background(Color(0xFF071923))
             .pointerInput(Unit) {
                 detectTapGestures { tap ->
-                    foodPos = tap
+                    foods = foods + FoodParticle(position = tap, velocity = Offset.Zero)
                 }
             }
     ) {
         val speed = with(density) { 2.5f }
-        val toFood = foodPos - blobPos
+        val nearestFood = foods.minByOrNull { (it.position - blobPos).getDistance() }
+        val toFood = nearestFood?.position?.minus(blobPos) ?: Offset.Zero
         val distance = toFood.getDistance()
-        val direction = if (distance > 0.001f) toFood / distance else Offset.Zero
+        val direction = if (distance > 0.001f) toFood / distance else Offset(1f, 0f)
 
         val blobRadius = min(size.width, size.height) * 0.09f
-        val reachedFood = distance < blobRadius * 0.8f
+        val reachedFood = nearestFood != null && distance < blobRadius * 0.8f
 
         if (!reachedFood) {
             blobPos += direction * speed
@@ -88,18 +100,47 @@ fun AmoebaGame() {
             vacuoleProgress = (vacuoleProgress + 0.015f).coerceAtMost(1f)
         }
 
-        drawCircle(color = Color(0xFFE5A55E), radius = blobRadius * 0.25f, center = foodPos, alpha = 1f - vacuoleProgress)
+        val foodRadius = blobRadius * 0.25f
+
+        foods = foods.map { food ->
+            val away = food.position - blobPos
+            val d = away.getDistance().coerceAtLeast(0.001f)
+            val escapeDir = away / d
+            val panic = ((blobRadius * 3.2f - d) / (blobRadius * 3.2f)).coerceIn(0f, 1f)
+            val accel = escapeDir * (panic * 1.4f)
+            val damped = (food.velocity + accel) * 0.93f
+            val moved = food.position + damped
+            FoodParticle(
+                position = Offset(
+                    x = moved.x.coerceIn(foodRadius, size.width - foodRadius),
+                    y = moved.y.coerceIn(foodRadius, size.height - foodRadius)
+                ),
+                velocity = damped
+            )
+        }
+
+        foods.forEach { food ->
+            drawCircle(color = Color(0xFFE5A55E), radius = foodRadius, center = food.position)
+        }
 
         drawAmoebaBody(blobPos, blobRadius, morphPhase, direction, reachedFood)
         drawEyes(blobPos, blobRadius, direction)
 
         if (reachedFood || vacuoleProgress > 0f) {
-            drawVacuole(foodPos, blobRadius * 0.7f, vacuoleProgress)
+            val eatenFoodPos = nearestFood?.position ?: blobPos
+            drawVacuole(eatenFoodPos, blobRadius * 0.7f, vacuoleProgress)
             if (vacuoleProgress >= 1f) {
-                foodPos = Offset(
-                    x = size.width * (0.15f + 0.7f * ((sin(morphPhase * 1.3f) + 1f) / 2f)),
-                    y = size.height * (0.18f + 0.65f * ((cos(morphPhase * 1.7f) + 1f) / 2f))
-                )
+                if (nearestFood != null) foods = foods - nearestFood
+                if (foods.size < 7) {
+                    val phaseSeed = morphPhase + foods.size
+                    foods = foods + FoodParticle(
+                        position = Offset(
+                            x = size.width * (0.12f + 0.76f * ((sin(phaseSeed * 1.3f) + 1f) / 2f)),
+                            y = size.height * (0.15f + 0.72f * ((cos(phaseSeed * 1.7f) + 1f) / 2f))
+                        ),
+                        velocity = Offset.Zero
+                    )
+                }
                 vacuoleProgress = 0f
             }
         }
