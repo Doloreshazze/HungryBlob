@@ -160,7 +160,8 @@ fun AmoebaGame() {
                         worldSize = worldSize,
                         padding = foodRadius,
                         blobPos = blobPos,
-                        minDistanceFromBlob = blobRadius * 2.8f
+                        minDistanceFromBlob = blobRadius * 2.8f,
+                        obstacles = obstacles
                     ),
                     velocity = Offset.Zero
                 )
@@ -222,7 +223,8 @@ fun AmoebaGame() {
                             worldSize = worldSize,
                             padding = foodRadius,
                             blobPos = blobPos,
-                            minDistanceFromBlob = min(worldSize.width, worldSize.height) * 0.35f
+                            minDistanceFromBlob = min(worldSize.width, worldSize.height) * 0.35f,
+                            obstacles = obstacles
                         ),
                         velocity = Offset.Zero
                     )
@@ -299,19 +301,26 @@ private fun randomFoodPosition(
     worldSize: Size,
     padding: Float,
     blobPos: Offset,
-    minDistanceFromBlob: Float
+    minDistanceFromBlob: Float,
+    obstacles: List<ObstacleRect>
 ): Offset {
     repeat(80) {
         val candidate = Offset(
             x = Random.nextFloat() * (worldSize.width - padding * 2f) + padding,
             y = Random.nextFloat() * (worldSize.height - padding * 2f) + padding
         )
-        if ((candidate - blobPos).getDistance() >= minDistanceFromBlob) return candidate
+        val farFromBlob = (candidate - blobPos).getDistance() >= minDistanceFromBlob
+        if (farFromBlob && !collidesWithObstacles(candidate, padding, obstacles)) return candidate
     }
-    return Offset(
-        x = Random.nextFloat() * (worldSize.width - padding * 2f) + padding,
-        y = Random.nextFloat() * (worldSize.height - padding * 2f) + padding
-    )
+    repeat(40) {
+        val fallback = Offset(
+            x = Random.nextFloat() * (worldSize.width - padding * 2f) + padding,
+            y = Random.nextFloat() * (worldSize.height - padding * 2f) + padding
+        )
+        if (!collidesWithObstacles(fallback, padding, obstacles)) return fallback
+    }
+
+    return Offset(worldSize.width * 0.5f, worldSize.height * 0.5f)
 }
 
 private fun collidesWithObstacles(center: Offset, radius: Float, obstacles: List<ObstacleRect>): Boolean =
