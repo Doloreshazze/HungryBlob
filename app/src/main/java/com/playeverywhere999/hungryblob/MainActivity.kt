@@ -197,25 +197,34 @@ fun AmoebaGame() {
                 nextPosition = clamped
                 finalVelocity = worldBounced
             } else {
-                val slideX = Offset(
-                    x = clamped.x,
+                val xOnlyMoved = Offset(
+                    x = (food.position.x + worldBounced.x).coerceIn(foodRadius, worldSize.width - foodRadius),
                     y = food.position.y.coerceIn(foodRadius, worldSize.height - foodRadius)
                 )
-                val slideY = Offset(
+                val yOnlyMoved = Offset(
                     x = food.position.x.coerceIn(foodRadius, worldSize.width - foodRadius),
-                    y = clamped.y
+                    y = (food.position.y + worldBounced.y).coerceIn(foodRadius, worldSize.height - foodRadius)
                 )
 
-                val canSlideX = !collidesWithObstacles(slideX, foodRadius, obstacles)
-                val canSlideY = !collidesWithObstacles(slideY, foodRadius, obstacles)
+                val canSlideX = !collidesWithObstacles(xOnlyMoved, foodRadius, obstacles)
+                val canSlideY = !collidesWithObstacles(yOnlyMoved, foodRadius, obstacles)
 
                 when {
-                    canSlideX && (!canSlideY || kotlin.math.abs(worldBounced.x) >= kotlin.math.abs(worldBounced.y)) -> {
-                        nextPosition = slideX
+                    canSlideX && canSlideY -> {
+                        if (kotlin.math.abs(worldBounced.x) >= kotlin.math.abs(worldBounced.y)) {
+                            nextPosition = xOnlyMoved
+                            finalVelocity = Offset(worldBounced.x, 0f)
+                        } else {
+                            nextPosition = yOnlyMoved
+                            finalVelocity = Offset(0f, worldBounced.y)
+                        }
+                    }
+                    canSlideX -> {
+                        nextPosition = xOnlyMoved
                         finalVelocity = Offset(worldBounced.x, 0f)
                     }
                     canSlideY -> {
-                        nextPosition = slideY
+                        nextPosition = yOnlyMoved
                         finalVelocity = Offset(0f, worldBounced.y)
                     }
                     else -> {
