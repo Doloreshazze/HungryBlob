@@ -404,7 +404,6 @@ private fun DrawScope.drawAmoebaBody(
     path.close()
 
     drawPath(path = path, color = Color(0xFF83E7A0))
-    drawCircle(color = Color(0xAA57C879), radius = baseRadius * 0.68f, center = center)
 }
 
 private fun DrawScope.drawEyes(
