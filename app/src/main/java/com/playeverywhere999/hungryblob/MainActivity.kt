@@ -62,6 +62,7 @@ fun AmoebaGame() {
     )
 
     var blobPos by remember { mutableStateOf(Offset(400f, 700f)) }
+    var cameraTopLeft by remember { mutableStateOf(Offset.Zero) }
     var foods by remember {
         mutableStateOf(
             List(7) { index ->
@@ -82,16 +83,16 @@ fun AmoebaGame() {
             .background(Color(0xFF071923))
             .pointerInput(Unit) {
                 detectTapGestures { tap ->
-                    moveTarget = tap
+                    moveTarget = tap + cameraTopLeft
                 }
             }
             .pointerInput(Unit) {
                 detectDragGestures(
                     onDragStart = { touch ->
-                        moveTarget = touch
+                        moveTarget = touch + cameraTopLeft
                     },
                     onDrag = { change, _ ->
-                        moveTarget = change.position
+                        moveTarget = change.position + cameraTopLeft
                     },
                     onDragEnd = {
                         moveTarget = null
@@ -103,12 +104,20 @@ fun AmoebaGame() {
             }
     ) {
         val speed = with(density) { 2.5f }
-        val blobRadius = min(size.width, size.height) * 0.09f
+        val viewportSize = size
+        val worldSize = Size(viewportSize.width * 10f, viewportSize.height * 4f)
+        val blobRadius = min(viewportSize.width, viewportSize.height) * 0.09f
         val movementPadding = blobRadius * 0.5f
+
+        cameraTopLeft = Offset(
+            x = (blobPos.x - viewportSize.width * 0.5f).coerceIn(0f, worldSize.width - viewportSize.width),
+            y = (blobPos.y - viewportSize.height * 0.5f).coerceIn(0f, worldSize.height - viewportSize.height)
+        )
+
         val boundedTarget = moveTarget?.let { target ->
             Offset(
-                x = target.x.coerceIn(movementPadding, size.width - movementPadding),
-                y = target.y.coerceIn(movementPadding, size.height - movementPadding)
+                x = target.x.coerceIn(movementPadding, worldSize.width - movementPadding),
+                y = target.y.coerceIn(movementPadding, worldSize.height - movementPadding)
             )
         }
         val toTarget = boundedTarget?.minus(blobPos) ?: Offset.Zero
@@ -119,8 +128,8 @@ fun AmoebaGame() {
             moveHeading = direction
             val moved = blobPos + moveHeading * speed
             blobPos = Offset(
-                x = moved.x.coerceIn(movementPadding, size.width - movementPadding),
-                y = moved.y.coerceIn(movementPadding, size.height - movementPadding)
+                x = moved.x.coerceIn(movementPadding, worldSize.width - movementPadding),
+                y = moved.y.coerceIn(movementPadding, worldSize.height - movementPadding)
             )
         } else if (boundedTarget != null) {
             blobPos = boundedTarget
@@ -129,8 +138,8 @@ fun AmoebaGame() {
             val drift = if (moveHeading.getDistance() > 0.001f) moveHeading.normalized() else Offset.Zero
             val moved = blobPos + drift * speed
             blobPos = Offset(
-                x = moved.x.coerceIn(movementPadding, size.width - movementPadding),
-                y = moved.y.coerceIn(movementPadding, size.height - movementPadding)
+                x = moved.x.coerceIn(movementPadding, worldSize.width - movementPadding),
+                y = moved.y.coerceIn(movementPadding, worldSize.height - movementPadding)
             )
         }
 
@@ -155,8 +164,8 @@ fun AmoebaGame() {
             val damped = (food.velocity + accel) * 0.93f
             val moved = food.position + damped
 
-            val hitX = moved.x <= foodRadius || moved.x >= size.width - foodRadius
-            val hitY = moved.y <= foodRadius || moved.y >= size.height - foodRadius
+            val hitX = moved.x <= foodRadius || moved.x >= worldSize.width - foodRadius
+            val hitY = moved.y <= foodRadius || moved.y >= worldSize.height - foodRadius
             val bouncedVelocity = Offset(
                 x = if (hitX) -damped.x * 0.82f else damped.x,
                 y = if (hitY) -damped.y * 0.82f else damped.y
@@ -164,29 +173,29 @@ fun AmoebaGame() {
 
             FoodParticle(
                 position = Offset(
-                    x = moved.x.coerceIn(foodRadius, size.width - foodRadius),
-                    y = moved.y.coerceIn(foodRadius, size.height - foodRadius)
+                    x = moved.x.coerceIn(foodRadius, worldSize.width - foodRadius),
+                    y = moved.y.coerceIn(foodRadius, worldSize.height - foodRadius)
                 ),
                 velocity = bouncedVelocity
             )
         }
 
         foods.forEach { food ->
-            drawCircle(color = Color(0xFFE5A55E), radius = foodRadius, center = food.position)
+            drawCircle(color = Color(0xFFE5A55E), radius = foodRadius, center = food.position - cameraTopLeft)
         }
 
-        drawAmoebaBody(blobPos, blobRadius, morphPhase, direction, reachedFood)
-        drawEyes(blobPos, blobRadius, direction)
+        drawAmoebaBody(blobPos - cameraTopLeft, blobRadius, morphPhase, direction, reachedFood)
+        drawEyes(blobPos - cameraTopLeft, blobRadius, direction)
 
         if (reachedFood || vacuoleProgress > 0f) {
             val eatenFoodPos = nearestFood?.position ?: blobPos
-            drawVacuole(eatenFoodPos, blobRadius * 0.7f, vacuoleProgress)
+            drawVacuole(eatenFoodPos - cameraTopLeft, blobRadius * 0.7f, vacuoleProgress)
             if (vacuoleProgress >= 1f) {
                 if (nearestFood != null) foods = foods - nearestFood
                 if (foods.size < 7) {
                     foods = foods + FoodParticle(
                         position = pickSpawnPosition(
-                            worldSize = size,
+                            worldSize = worldSize,
                             blobPos = blobPos,
                             padding = foodRadius,
                             phase = morphPhase,
