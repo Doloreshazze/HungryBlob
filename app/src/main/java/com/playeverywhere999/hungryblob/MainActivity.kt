@@ -265,7 +265,16 @@ private fun pickSpawnPosition(
         )
         val safe = candidate.x > padding * 2f && candidate.x < worldSize.width - padding * 2f &&
             candidate.y > padding * 2f && candidate.y < worldSize.height - padding * 2f
-        if (safe && (candidate - blobPos).getDistance() >= minBlobDistance) return candidate
+
+        val cornerBlockX = worldSize.width * 0.22f
+        val cornerBlockY = worldSize.height * 0.22f
+        val inLeft = candidate.x < cornerBlockX
+        val inRight = candidate.x > worldSize.width - cornerBlockX
+        val inTop = candidate.y < cornerBlockY
+        val inBottom = candidate.y > worldSize.height - cornerBlockY
+        val isCornerZone = (inLeft || inRight) && (inTop || inBottom)
+
+        if (safe && !isCornerZone && (candidate - blobPos).getDistance() >= minBlobDistance) return candidate
     }
     return center
 }
