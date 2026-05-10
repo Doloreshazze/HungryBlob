@@ -330,7 +330,6 @@ private fun collidesWithObstacles(center: Offset, radius: Float, obstacles: List
     }
 
 private fun buildLetterObstacles(worldSize: Size, viewportSize: Size): List<ObstacleRect> {
-    val text = "HUNGRY BLOB"
     val glyphs = mapOf(
         'H' to listOf("10001","10001","11111","10001","10001","10001","10001"),
         'U' to listOf("10001","10001","10001","10001","10001","10001","01110"),
@@ -343,29 +342,40 @@ private fun buildLetterObstacles(worldSize: Size, viewportSize: Size): List<Obst
         'O' to listOf("01110","10001","10001","10000","10001","10001","01110"),
         ' ' to listOf("000","000","000","000","000","000","000")
     )
-    val cell = min(viewportSize.width / 8.5f, viewportSize.height / 3.2f)
-    val gap = cell
-    val totalCols = text.sumOf { glyphs[it]!![0].length } + (text.length - 1)
-    val startX = (viewportSize.width * 0.55f).coerceAtMost(worldSize.width - totalCols * cell - cell)
-    val startY = (viewportSize.height * 0.55f).coerceAtMost(worldSize.height - 8f * cell)
-    val thickness = cell * 0.9f
 
-    val obstacles = mutableListOf<ObstacleRect>()
-    var cursorX = startX
-    for (ch in text) {
-        val pattern = glyphs[ch] ?: glyphs[' ']!!
-        pattern.forEachIndexed { row, line ->
-            line.forEachIndexed { col, c ->
-                if (c == '1') {
-                    val x = cursorX + col * cell
-                    val y = startY + row * cell
-                    obstacles += ObstacleRect(x, y, x + thickness, y + thickness)
+    fun buildLine(text: String, topY: Float, lineHeight: Float): List<ObstacleRect> {
+        val totalCols = text.sumOf { glyphs[it]!![0].length } + (text.length - 1)
+        val cell = (worldSize.width * 0.92f) / totalCols
+        val thickness = cell * 0.94f
+        val scaledCell = min(cell, lineHeight / 7f)
+        val xStart = (worldSize.width - totalCols * scaledCell) * 0.5f
+        val yStart = topY + (lineHeight - 7f * scaledCell) * 0.5f
+
+        val out = mutableListOf<ObstacleRect>()
+        var cursorX = xStart
+        for (ch in text) {
+            val pattern = glyphs[ch] ?: glyphs[' ']!!
+            pattern.forEachIndexed { row, line ->
+                line.forEachIndexed { col, c ->
+                    if (c == '1') {
+                        val x = cursorX + col * scaledCell
+                        val y = yStart + row * scaledCell
+                        out += ObstacleRect(x, y, x + thickness, y + thickness)
+                    }
                 }
             }
+            cursorX += pattern[0].length * scaledCell + scaledCell
         }
-        cursorX += pattern[0].length * cell + gap
+        return out
     }
-    return obstacles
+
+    val verticalPadding = maxOf(viewportSize.height * 0.25f, worldSize.height * 0.06f)
+    val availableHeight = worldSize.height - verticalPadding * 2f
+    val gap = availableHeight * 0.08f
+    val lineHeight = (availableHeight - gap) * 0.5f
+
+    return buildLine("HUNGRY", verticalPadding, lineHeight) +
+        buildLine("BLOB", verticalPadding + lineHeight + gap, lineHeight)
 }
 
 private operator fun Offset.plus(other: Offset): Offset = Offset(x + other.x, y + other.y)
