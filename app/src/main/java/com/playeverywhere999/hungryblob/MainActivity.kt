@@ -21,7 +21,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
@@ -30,7 +29,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.tooling.preview.Preview
 import com.playeverywhere999.hungryblob.ui.theme.HungryBlobTheme
 import kotlin.math.PI
-import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.min
 import kotlin.math.sin
@@ -102,13 +100,20 @@ fun AmoebaGame() {
 
         val foodRadius = blobRadius * 0.25f
 
-        foods = foods.map { food ->
+        foods = foods.mapIndexed { index, food ->
             val away = food.position - blobPos
             val d = away.getDistance().coerceAtLeast(0.001f)
             val escapeDir = away / d
             val panic = ((blobRadius * 3.2f - d) / (blobRadius * 3.2f)).coerceIn(0f, 1f)
             val accel = escapeDir * (panic * 1.4f)
-            val damped = (food.velocity + accel) * 0.93f
+
+            val jitterPhase = morphPhase * 2.8f + index * 1.7f
+            val brownian = Offset(
+                x = sin(jitterPhase).toFloat(),
+                y = cos(jitterPhase * 1.23f + index).toFloat()
+            ) * 0.22f
+
+            val damped = (food.velocity + accel + brownian) * 0.93f
             val moved = food.position + damped
             FoodParticle(
                 position = Offset(
