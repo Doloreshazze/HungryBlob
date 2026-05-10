@@ -44,7 +44,14 @@ import kotlin.random.Random
 
 private data class FoodParticle(val id: Long, val position: Offset, val velocity: Offset)
 private data class ObstacleRect(val left: Float, val top: Float, val right: Float, val bottom: Float)
-private data class BotAmoeba(val id: Int, val position: Offset, val heading: Offset, val color: Color)
+private data class BotAmoeba(
+    val id: Int,
+    val position: Offset,
+    val heading: Offset,
+    val color: Color,
+    val consumedFoodId: Long? = null,
+    val vacuoleProgress: Float = 0f
+)
 private data class GameSnapshot(
     val blobPos: Offset,
     val foods: List<FoodParticle>,
@@ -55,7 +62,7 @@ private data class GameSnapshot(
 )
 
 private const val FOOD_PARTICLE_COUNT = 400
-private const val BOT_AMOEBA_COUNT = 40
+private const val BOT_AMOEBA_COUNT = 60
 private const val GAME_PREFS = "hungry_blob_save"
 private const val GAME_STATE_KEY = "state_v1"
 
@@ -217,7 +224,7 @@ fun AmoebaGame() {
         val reachedFood = candidateFoodToConsume != null
 
         val foodRadius = blobRadius * 0.25f
-        val botRadius = blobRadius * 0.75f
+        val botRadius = blobRadius
         if (bots.isEmpty()) {
             bots = List(BOT_AMOEBA_COUNT) { idx ->
                 val headingAngle = Random.nextFloat() * 2f * PI.toFloat()
@@ -231,7 +238,9 @@ fun AmoebaGame() {
                         obstacles = obstacles
                     ),
                     heading = Offset(cos(headingAngle), sin(headingAngle)),
-                    color = botColor(idx)
+                    color = botColor(idx),
+                    consumedFoodId = null,
+                    vacuoleProgress = 0f
                 )
             }
         }
@@ -367,13 +376,40 @@ fun AmoebaGame() {
             }
         }
 
-        val eatenByBots = bots.mapNotNull { bot ->
-            foods.minByOrNull { (it.position - bot.position).getDistance() }
-                ?.takeIf { (it.position - bot.position).getDistance() < blobRadius * 0.7f }
-                ?.id
-        }.toSet()
-        if (eatenByBots.isNotEmpty()) {
-            foods = foods.filterNot { it.id in eatenByBots }
+        val foodsToRemoveByBots = mutableSetOf<Long>()
+        bots = bots.map { bot ->
+            val nearest = foods.minByOrNull { (it.position - bot.position).getDistance() }
+            val candidateFood = when {
+                bot.consumedFoodId != null -> foods.firstOrNull { it.id == bot.consumedFoodId }
+                nearest != null && (nearest.position - bot.position).getDistance() < blobRadius * 0.8f -> nearest
+                else -> null
+            }
+            if (candidateFood == null) {
+                bot.copy(consumedFoodId = null, vacuoleProgress = 0f)
+            } else {
+                val nextProgress = (bot.vacuoleProgress + 0.015f).coerceAtMost(1f)
+                if (nextProgress >= 1f) {
+                    foodsToRemoveByBots += candidateFood.id
+                    bot.copy(consumedFoodId = null, vacuoleProgress = 0f)
+                } else {
+                    bot.copy(consumedFoodId = candidateFood.id, vacuoleProgress = nextProgress)
+                }
+            }
+        }
+        if (foodsToRemoveByBots.isNotEmpty()) {
+            foods = foods.filterNot { it.id in foodsToRemoveByBots } + List(foodsToRemoveByBots.size) {
+                FoodParticle(
+                    id = nextFoodId++,
+                    position = randomFoodPosition(
+                        worldSize = worldSize,
+                        padding = foodRadius,
+                        blobPos = blobPos,
+                        minDistanceFromBlob = min(worldSize.width, worldSize.height) * 0.35f,
+                        obstacles = obstacles
+                    ),
+                    velocity = Offset.Zero
+                )
+            }
         }
 
         obstacles.forEach { obstacle ->
@@ -391,19 +427,19 @@ fun AmoebaGame() {
         bots.forEach { bot ->
             drawAmoebaBody(
                 center = bot.position - cameraTopLeft,
-                baseRadius = blobRadius * 0.82f,
+                baseRadius = blobRadius,
                 morphProgress = (morphProgress + bot.id * 0.17f) % 1f,
                 direction = bot.heading,
-                engulfing = false,
-                foodScreenPosition = null,
-                engulfProgress = 0f,
+                engulfing = bot.consumedFoodId != null || bot.vacuoleProgress > 0f,
+                foodScreenPosition = foods.firstOrNull { it.id == bot.consumedFoodId }?.position?.minus(cameraTopLeft),
+                engulfProgress = bot.vacuoleProgress,
                 bodyColor = bot.color
             )
             drawEyes(
                 center = bot.position - cameraTopLeft,
-                radius = blobRadius * 0.82f,
+                radius = blobRadius,
                 direction = bot.heading,
-                spinning = false,
+                spinning = bot.consumedFoodId != null || bot.vacuoleProgress > 0f,
                 spinPhase = morphProgress
             )
         }
