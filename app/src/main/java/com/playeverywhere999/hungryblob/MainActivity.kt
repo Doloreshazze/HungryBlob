@@ -145,20 +145,14 @@ fun AmoebaGame() {
 
         val foodRadius = blobRadius * 0.25f
 
-        foods = foods.mapIndexed { index, food ->
+        foods = foods.map { food ->
             val away = food.position - blobPos
             val d = away.getDistance().coerceAtLeast(0.001f)
             val escapeDir = away / d
             val panic = ((blobRadius * 3.2f - d) / (blobRadius * 3.2f)).coerceIn(0f, 1f)
             val accel = escapeDir * (panic * 1.4f)
 
-            val jitterPhase = morphPhase * 2.8f + index * 1.7f
-            val brownian = Offset(
-                x = sin(jitterPhase).toFloat(),
-                y = cos(jitterPhase * 1.23f + index).toFloat()
-            ) * 0.22f
-
-            val damped = (food.velocity + accel + brownian) * 0.93f
+            val damped = (food.velocity + accel) * 0.93f
             val moved = food.position + damped
 
             val hitX = moved.x <= foodRadius || moved.x >= size.width - foodRadius
