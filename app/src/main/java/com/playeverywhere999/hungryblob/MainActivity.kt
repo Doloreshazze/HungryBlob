@@ -71,7 +71,7 @@ private data class GameSnapshot(
 
 private const val FOOD_PARTICLE_COUNT = 400
 private const val BOT_AMOEBA_COUNT = 60
-private const val POISON_JELLYFISH_COUNT = 14
+private const val POISON_JELLYFISH_COUNT = 60
 private const val GAME_PREFS = "hungry_blob_save"
 private const val GAME_STATE_KEY = "state_v1"
 
@@ -244,7 +244,7 @@ fun AmoebaGame() {
                     id = idx,
                     position = randomFoodPosition(
                         worldSize = worldSize,
-                        padding = botRadius + movementPadding,
+                        padding = botRadius,
                         blobPos = blobPos,
                         minDistanceFromBlob = blobRadius * 3.5f,
                         obstacles = obstacles
@@ -415,7 +415,7 @@ fun AmoebaGame() {
                 radius = botRadius,
                 obstacles = obstacles,
                 worldSize = worldSize,
-                padding = movementPadding
+                padding = botRadius
             )
             val isStuck = (moved - bot.position).getDistance() < 0.2f
             if (isStuck) {
@@ -427,7 +427,7 @@ fun AmoebaGame() {
                     radius = botRadius,
                     obstacles = obstacles,
                     worldSize = worldSize,
-                    padding = movementPadding
+                    padding = botRadius
                 )
                 bot.copy(position = escaped, heading = escapeHeading, color = bot.color)
             } else {
@@ -444,7 +444,7 @@ fun AmoebaGame() {
                     radius = botRadius,
                     obstacles = obstacles,
                     worldSize = worldSize,
-                    padding = movementPadding
+                    padding = botRadius
                 )
                 bot.copy(position = pushed, shockTimer = newShock)
             } else bot.copy(shockTimer = newShock)
