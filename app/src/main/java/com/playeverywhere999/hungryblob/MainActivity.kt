@@ -93,7 +93,6 @@ private data class GameSnapshot(
 
 private const val FOOD_PARTICLE_COUNT = 440
 private const val BOT_AMOEBA_COUNT = 30
-private const val MAX_BOT_AMOEBA_COUNT = 60
 private const val POISON_JELLYFISH_COUNT = 24
 private const val AMOEBA_EATER_COUNT = 4
 private const val BOT_SOFT_REPEL_RANGE_FACTOR = 1.85f
@@ -272,13 +271,13 @@ fun AmoebaGame() {
             if (playerFoodCount >= nextSplitAt) {
                 nextSplitAt += 10
                 splitEventTimer = 1f
-                if (bots.size < MAX_BOT_AMOEBA_COUNT) {
+                if (bots.size < BOT_AMOEBA_COUNT) {
                     val splitDir = Offset(cos(morphProgress * 2f * PI.toFloat()), sin(morphProgress * 2f * PI.toFloat())).normalized()
                     bots = bots + BotAmoeba(
                         id = (bots.maxOfOrNull { it.id } ?: 0) + 1,
                         position = moveWithSliding(blobPos, splitDir * (blobRadius * 2.4f), blobRadius, obstacles, worldSize, blobRadius),
                         heading = splitDir,
-                        color = botColor(Random.nextInt(MAX_BOT_AMOEBA_COUNT)),
+                        color = botColor(Random.nextInt(BOT_AMOEBA_COUNT)),
                         vacuoleProgress = 1f,
                         foodCount = 0
                     )
@@ -661,8 +660,8 @@ fun AmoebaGame() {
         }
 
         val splitReadyBots = bots.filter { it.foodCount >= 10 }
-        if (splitReadyBots.isNotEmpty() && bots.size < MAX_BOT_AMOEBA_COUNT) {
-            val availableSlots = MAX_BOT_AMOEBA_COUNT - bots.size
+        if (splitReadyBots.isNotEmpty() && bots.size < BOT_AMOEBA_COUNT) {
+            val availableSlots = BOT_AMOEBA_COUNT - bots.size
             val parentsToSplit = splitReadyBots.take(availableSlots)
             val parentIds = parentsToSplit.map { it.id }.toSet()
             val nextBotIdStart = (bots.maxOfOrNull { it.id } ?: 0) + 1
