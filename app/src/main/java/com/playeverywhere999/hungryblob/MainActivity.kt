@@ -26,6 +26,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -43,7 +44,7 @@ import kotlin.math.sin
 import kotlin.math.sqrt
 import kotlin.random.Random
 
-private data class FoodParticle(val id: Long, val position: Offset, val velocity: Offset)
+private data class FoodParticle(val id: Long, val position: Offset, val velocity: Offset, val color: Color)
 private data class ObstacleRect(val left: Float, val top: Float, val right: Float, val bottom: Float)
 private data class BotAmoeba(
     val id: Int,
@@ -77,7 +78,7 @@ private const val BOT_SOFT_REPEL_RANGE_FACTOR = 1.85f
 private const val BOT_SOFT_REPEL_STRENGTH = 0.14f
 private const val FOOD_CAPTURE_RADIUS_FACTOR = 1.1f
 private const val GAME_PREFS = "hungry_blob_save"
-private const val GAME_STATE_KEY = "state_v1"
+private const val GAME_STATE_KEY = "state_v2"
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -125,6 +126,7 @@ fun AmoebaGame() {
     var bots by remember { mutableStateOf(emptyList<BotAmoeba>()) }
     var jellyfish by remember { mutableStateOf(emptyList<PoisonJellyfish>()) }
     var shockTimer by remember { mutableStateOf(0f) }
+    var playerColor by remember { mutableStateOf(Color(0xFF83E7A0)) }
 
     DisposableEffect(lifecycleOwner, blobPos, foods, vacuoleProgress, consumedFoodId, moveHeading, nextFoodId) {
         val observer = object : DefaultLifecycleObserver {
@@ -234,6 +236,7 @@ fun AmoebaGame() {
         } else {
             consumedFoodId = null
             vacuoleProgress = 1f
+            playerColor = candidateFoodToConsume.color
             foods = foods.filterNot { it.id == candidateFoodToConsume.id } + FoodParticle(
                 id = nextFoodId++,
                 position = randomFoodPosition(
@@ -243,7 +246,8 @@ fun AmoebaGame() {
                     minDistanceFromBlob = min(worldSize.width, worldSize.height) * 0.35f,
                     obstacles = obstacles
                 ),
-                velocity = Offset.Zero
+                velocity = Offset.Zero,
+                color = randomFoodColor()
             )
         }
 
@@ -304,7 +308,8 @@ fun AmoebaGame() {
                         minDistanceFromBlob = blobRadius * 2.8f,
                         obstacles = obstacles
                     ),
-                    velocity = Offset.Zero
+                    velocity = Offset.Zero,
+                    color = randomFoodColor()
                 )
             }
         }
@@ -415,7 +420,7 @@ fun AmoebaGame() {
                 worldSize = worldSize,
                 blobRadius = blobRadius
             )
-            FoodParticle(id = food.id, position = escapedCorner.first, velocity = escapedCorner.second)
+            FoodParticle(id = food.id, position = escapedCorner.first, velocity = escapedCorner.second, color = food.color)
         }
 
         bots = bots.map { bot ->
@@ -497,10 +502,10 @@ fun AmoebaGame() {
                 else -> null
             }
             if (candidateFood == null) {
-                bot.copy(consumedFoodId = null, vacuoleProgress = 0f)
+                bot.copy(consumedFoodId = null, vacuoleProgress = (bot.vacuoleProgress - 0.08f).coerceAtLeast(0f))
             } else {
                 foodsToRemoveByBots += candidateFood.id
-                bot.copy(consumedFoodId = null, vacuoleProgress = 1f)
+                bot.copy(consumedFoodId = null, vacuoleProgress = 1f, color = candidateFood.color)
             }
         }
         if (foodsToRemoveByBots.isNotEmpty()) {
@@ -514,7 +519,8 @@ fun AmoebaGame() {
                         minDistanceFromBlob = min(worldSize.width, worldSize.height) * 0.35f,
                         obstacles = obstacles
                     ),
-                    velocity = Offset.Zero
+                    velocity = Offset.Zero,
+                    color = randomFoodColor()
                 )
             }
         }
@@ -541,7 +547,7 @@ fun AmoebaGame() {
         }
 
         foods.forEach { food ->
-            drawCircle(color = Color(0xFFE5A55E), radius = foodRadius, center = food.position - cameraTopLeft)
+            drawCircle(color = food.color, radius = foodRadius, center = food.position - cameraTopLeft)
         }
 
         jellyfish.forEach { jelly ->
@@ -582,7 +588,8 @@ fun AmoebaGame() {
             direction = direction,
             engulfing = reachedFood,
             foodScreenPosition = consumedFoodScreenPos,
-            engulfProgress = vacuoleProgress
+            engulfProgress = vacuoleProgress,
+            bodyColor = playerColor
         )
         drawEyes(
             center = blobPos - cameraTopLeft,
@@ -894,6 +901,19 @@ private fun Offset.normalized(): Offset {
     return if (d > 0.001f) this / d else Offset.Zero
 }
 
+
+private fun randomFoodColor(): Color {
+    val palette = listOf(
+        Color(0xFFE5A55E),
+        Color(0xFFEF6F6C),
+        Color(0xFF8BD3DD),
+        Color(0xFFF9D65C),
+        Color(0xFFA29BFE),
+        Color(0xFF7BD389)
+    )
+    return palette.random()
+}
+
 @Preview(showBackground = true)
 @Composable
 fun AmoebaGamePreview() {
@@ -909,7 +929,8 @@ private fun saveSnapshot(context: android.content.Context, snapshot: GameSnapsho
             food.position.x,
             food.position.y,
             food.velocity.x,
-            food.velocity.y
+            food.velocity.y,
+            food.color.toArgb()
         ).joinToString(",")
     }
     val header = listOf(
@@ -948,11 +969,12 @@ private fun loadSnapshot(context: android.content.Context): GameSnapshot? {
         } else {
             split[1].split(';').mapNotNull { token ->
                 val parts = token.split(',')
-                if (parts.size != 5) return@mapNotNull null
+                if (parts.size !in setOf(5, 6)) return@mapNotNull null
                 FoodParticle(
                     id = parts[0].toLong(),
                     position = Offset(parts[1].toFloat(), parts[2].toFloat()),
-                    velocity = Offset(parts[3].toFloat(), parts[4].toFloat())
+                    velocity = Offset(parts[3].toFloat(), parts[4].toFloat()),
+                    color = if (parts.size == 6) Color(parts[5].toInt()) else randomFoodColor()
                 )
             }
         }
