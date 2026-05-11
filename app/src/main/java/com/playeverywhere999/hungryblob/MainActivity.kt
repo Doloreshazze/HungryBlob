@@ -231,8 +231,19 @@ fun AmoebaGame() {
             vacuoleProgress = 0f
             consumedFoodId = null
         } else {
-            consumedFoodId = candidateFoodToConsume.id
-            vacuoleProgress = (vacuoleProgress + 0.015f).coerceAtMost(1f)
+            consumedFoodId = null
+            vacuoleProgress = 1f
+            foods = foods.filterNot { it.id == candidateFoodToConsume.id } + FoodParticle(
+                id = nextFoodId++,
+                position = randomFoodPosition(
+                    worldSize = worldSize,
+                    padding = max(blobRadius * 0.25f, blobRadius * 0.82f),
+                    blobPos = blobPos,
+                    minDistanceFromBlob = min(worldSize.width, worldSize.height) * 0.35f,
+                    obstacles = obstacles
+                ),
+                velocity = Offset.Zero
+            )
         }
 
         val reachedFood = candidateFoodToConsume != null
@@ -487,13 +498,8 @@ fun AmoebaGame() {
             if (candidateFood == null) {
                 bot.copy(consumedFoodId = null, vacuoleProgress = 0f)
             } else {
-                val nextProgress = (bot.vacuoleProgress + 0.015f).coerceAtMost(1f)
-                if (nextProgress >= 1f) {
-                    foodsToRemoveByBots += candidateFood.id
-                    bot.copy(consumedFoodId = null, vacuoleProgress = 0f)
-                } else {
-                    bot.copy(consumedFoodId = candidateFood.id, vacuoleProgress = nextProgress)
-                }
+                foodsToRemoveByBots += candidateFood.id
+                bot.copy(consumedFoodId = null, vacuoleProgress = 1f)
             }
         }
         if (foodsToRemoveByBots.isNotEmpty()) {
@@ -589,20 +595,6 @@ fun AmoebaGame() {
 
         if (reachedFood || vacuoleProgress > 0f) {
             if (vacuoleProgress >= 1f) {
-                if (consumedFoodId != null) {
-                    foods = foods.filterNot { it.id == consumedFoodId } + FoodParticle(
-                        id = nextFoodId++,
-                        position = randomFoodPosition(
-                            worldSize = worldSize,
-                            padding = foodSpawnClearance,
-                            blobPos = blobPos,
-                            minDistanceFromBlob = min(worldSize.width, worldSize.height) * 0.35f,
-                            obstacles = obstacles
-                        ),
-                        velocity = Offset.Zero
-                    )
-                }
-                consumedFoodId = null
                 vacuoleProgress = 0f
             }
         }
