@@ -62,6 +62,13 @@ private data class PoisonJellyfish(
     val driftVelocity: Offset,
     val driftPhase: Float
 )
+
+private data class AmoebaEater(
+    val id: Int,
+    val position: Offset,
+    val heading: Offset,
+    val chompPhase: Float = 0f
+)
 private data class GameSnapshot(
     val blobPos: Offset,
     val foods: List<FoodParticle>,
@@ -74,6 +81,7 @@ private data class GameSnapshot(
 private const val FOOD_PARTICLE_COUNT = 400
 private const val BOT_AMOEBA_COUNT = 60
 private const val POISON_JELLYFISH_COUNT = 60
+private const val AMOEBA_EATER_COUNT = 4
 private const val BOT_SOFT_REPEL_RANGE_FACTOR = 1.85f
 private const val BOT_SOFT_REPEL_STRENGTH = 0.14f
 private const val FOOD_CAPTURE_RADIUS_FACTOR = 1.1f
@@ -97,8 +105,9 @@ fun AmoebaGame() {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val density = LocalDensity.current
-    val initialSnapshot = remember {
-        loadSnapshot(context) ?: GameSnapshot(
+    val loadedSnapshot = remember { loadSnapshot(context) }
+    val hasSavedSession = loadedSnapshot != null
+    val initialSnapshot = loadedSnapshot ?: GameSnapshot(
             blobPos = Offset(400f, 700f),
             foods = emptyList(),
             vacuoleProgress = 0f,
@@ -127,6 +136,10 @@ fun AmoebaGame() {
     var jellyfish by remember { mutableStateOf(emptyList<PoisonJellyfish>()) }
     var shockTimer by remember { mutableStateOf(0f) }
     var playerColor by remember { mutableStateOf(Color(0xFF83E7A0)) }
+    var playerFoodCount by remember { mutableStateOf(if (hasSavedSession) 10 else 0) }
+    var splitEventTimer by remember { mutableStateOf(0f) }
+    var hasSplitHappened by remember { mutableStateOf(hasSavedSession) }
+    var amoebaEaters by remember { mutableStateOf(emptyList<AmoebaEater>()) }
 
     DisposableEffect(lifecycleOwner, blobPos, foods, vacuoleProgress, consumedFoodId, moveHeading, nextFoodId) {
         val observer = object : DefaultLifecycleObserver {
@@ -236,6 +249,21 @@ fun AmoebaGame() {
         } else {
             consumedFoodId = null
             vacuoleProgress = 1f
+            playerFoodCount += 1
+            if (!hasSplitHappened && playerFoodCount >= 10) {
+                hasSplitHappened = true
+                splitEventTimer = 1f
+                if (bots.size < BOT_AMOEBA_COUNT) {
+                    val splitDir = Offset(cos(morphProgress * 2f * PI.toFloat()), sin(morphProgress * 2f * PI.toFloat())).normalized()
+                    bots = bots + BotAmoeba(
+                        id = (bots.maxOfOrNull { it.id } ?: 0) + 1,
+                        position = moveWithSliding(blobPos, splitDir * (blobRadius * 2.4f), blobRadius, obstacles, worldSize, blobRadius),
+                        heading = splitDir,
+                        color = botColor(Random.nextInt(BOT_AMOEBA_COUNT)),
+                        vacuoleProgress = 1f
+                    )
+                }
+            }
             playerColor = candidateFoodToConsume.color
             foods = foods.filterNot { it.id == candidateFoodToConsume.id } + FoodParticle(
                 id = nextFoodId++,
@@ -257,7 +285,7 @@ fun AmoebaGame() {
         val botRadius = blobRadius
         val jellyRadius = blobRadius * 0.9f
         val foodSpawnClearance = max(foodRadius, botRadius * 0.82f)
-        if (bots.isEmpty()) {
+        if (bots.isEmpty() && hasSavedSession) {
             bots = List(BOT_AMOEBA_COUNT) { idx ->
                 val headingAngle = Random.nextFloat() * 2f * PI.toFloat()
                 BotAmoeba(
@@ -292,6 +320,24 @@ fun AmoebaGame() {
                     ),
                     driftVelocity = Offset(cos(angle), sin(angle)) * (speed * 0.22f),
                     driftPhase = Random.nextFloat()
+                )
+            }
+        }
+
+
+        if (amoebaEaters.isEmpty()) {
+            amoebaEaters = List(AMOEBA_EATER_COUNT) { idx ->
+                val angle = Random.nextFloat() * 2f * PI.toFloat()
+                AmoebaEater(
+                    id = idx,
+                    position = randomFoodPosition(
+                        worldSize = worldSize,
+                        padding = blobRadius * 1.2f,
+                        blobPos = blobPos,
+                        minDistanceFromBlob = blobRadius * 4f,
+                        obstacles = obstacles
+                    ),
+                    heading = Offset(cos(angle), sin(angle))
                 )
             }
         }
@@ -525,6 +571,28 @@ fun AmoebaGame() {
             }
         }
 
+        val eatenBotIds = mutableSetOf<Int>()
+        amoebaEaters = amoebaEaters.map { eater ->
+            val preyPos = bots.minByOrNull { (it.position - eater.position).getDistance() }?.position ?: blobPos
+            val pursuit = (preyPos - eater.position).normalized().let { if (it.getDistance() > 0.001f) it else eater.heading }
+            val moved = moveWithSliding(
+                current = eater.position,
+                velocity = pursuit * (speed * 1.05f),
+                radius = blobRadius * 1.05f,
+                obstacles = obstacles,
+                worldSize = worldSize,
+                padding = blobRadius
+            )
+            eater.copy(position = moved, heading = pursuit, chompPhase = (eater.chompPhase + 0.04f) % 1f)
+        }
+        amoebaEaters.forEach { eater ->
+            bots.filter { (it.position - eater.position).getDistance() < blobRadius * 1.5f }
+                .forEach { eatenBotIds += it.id }
+        }
+        if (eatenBotIds.isNotEmpty()) {
+            bots = bots.filterNot { it.id in eatenBotIds }
+        }
+
         if (shockTimer > 0f) {
             val nearestJelly = jellyfish.minByOrNull { (it.position - blobPos).getDistance() }?.position ?: blobPos
             val away = (blobPos - nearestJelly).normalized()
@@ -537,6 +605,8 @@ fun AmoebaGame() {
                 padding = movementPadding
             )
         }
+
+        splitEventTimer = (splitEventTimer - 0.02f).coerceAtLeast(0f)
 
         obstacles.forEach { obstacle ->
             drawRect(
@@ -580,6 +650,15 @@ fun AmoebaGame() {
             )
         }
 
+        amoebaEaters.forEach { eater ->
+            drawAmoebaEater(
+                center = eater.position - cameraTopLeft,
+                radius = blobRadius * 1.05f,
+                direction = eater.heading,
+                phase = morphProgress + eater.chompPhase
+            )
+        }
+
         val consumedFoodScreenPos = candidateFoodToConsume?.position?.minus(cameraTopLeft)
         drawAmoebaBody(
             center = blobPos - cameraTopLeft,
@@ -600,6 +679,10 @@ fun AmoebaGame() {
             shocked = shockTimer > 0f,
             shockStrength = shockTimer
         )
+
+        if (splitEventTimer > 0f) {
+            drawSplitCelebration(blobPos - cameraTopLeft, blobRadius * (1f + splitEventTimer), splitEventTimer, morphProgress)
+        }
 
     }
 }
@@ -695,6 +778,27 @@ private fun DrawScope.drawPoisonJellyfish(center: Offset, radius: Float, phase: 
             end = Offset(baseX + lashTilt, baseY - eyeRadius * (0.32f + 0.45f * (1f - blinkAmount))),
             strokeWidth = radius * 0.03f
         )
+    }
+}
+
+private fun DrawScope.drawAmoebaEater(center: Offset, radius: Float, direction: Offset, phase: Float) {
+    val facing = if (direction.getDistance() > 0.001f) direction else Offset(1f, 0f)
+    val side = Offset(-facing.y, facing.x)
+    drawCircle(Color(0xFFD64B31), radius, center)
+    drawCircle(Color(0xFFF96C4A), radius * 0.72f, center + facing * (radius * 0.1f))
+    val mouthOpen = (0.25f + kotlin.math.abs(sin(phase * 2f * PI.toFloat())).toFloat() * 0.55f)
+    drawOval(Color(0xFF2A0B0B), topLeft = center + facing * (radius * 0.08f) - Offset(radius * 0.45f, radius * 0.18f * mouthOpen), size = Size(radius * 0.9f, radius * 0.36f * mouthOpen))
+    drawCircle(Color.White, radius * 0.15f, center + facing * (radius * 0.35f) + side * (radius * 0.22f))
+    drawCircle(Color.White, radius * 0.15f, center + facing * (radius * 0.35f) - side * (radius * 0.22f))
+}
+
+private fun DrawScope.drawSplitCelebration(center: Offset, radius: Float, t: Float, phase: Float) {
+    val sparkCount = 10
+    repeat(sparkCount) { idx ->
+        val angle = (idx / sparkCount.toFloat()) * 2f * PI.toFloat() + phase * 2f * PI.toFloat()
+        val dist = radius * (1.1f + (1f - t) * 1.2f)
+        val p = center + Offset(cos(angle).toFloat(), sin(angle).toFloat()) * dist
+        drawCircle(Color(0xFFFFE66D), radius * 0.12f * t.coerceAtLeast(0.3f), p)
     }
 }
 
