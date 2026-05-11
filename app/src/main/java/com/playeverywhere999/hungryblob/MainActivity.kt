@@ -155,6 +155,7 @@ fun AmoebaGame() {
     var botPortalReadyIds by remember { mutableStateOf(emptySet<Int>()) }
     var jellyPortalReadyIds by remember { mutableStateOf(emptySet<Int>()) }
     var eaterPortalReadyIds by remember { mutableStateOf(emptySet<Int>()) }
+    var foodUpdatePhase by remember { mutableStateOf(0) }
 
     DisposableEffect(lifecycleOwner, blobPos, foods, vacuoleProgress, consumedFoodId, moveHeading, nextFoodId) {
         val observer = object : DefaultLifecycleObserver {
@@ -423,7 +424,28 @@ fun AmoebaGame() {
         shockTimer = if (hitJelly) 1f else (shockTimer - 0.03f).coerceAtLeast(0f)
 
         val foodBaseSpeed = speed * 0.9f
-        foods = foods.map { food ->
+        val foodUpdateStride = 4
+        foodUpdatePhase = (foodUpdatePhase + 1) % foodUpdateStride
+        val dynamicFoodRange = blobRadius * 9f
+        val dynamicFoodRangeSq = dynamicFoodRange * dynamicFoodRange
+        foods = foods.mapIndexed { idx, food ->
+            val px = food.position.x - blobPos.x
+            val py = food.position.y - blobPos.y
+            val nearPlayer = (px * px + py * py) <= dynamicFoodRangeSq
+            val nearBot = bots.any { bot ->
+                val dx = food.position.x - bot.position.x
+                val dy = food.position.y - bot.position.y
+                dx * dx + dy * dy <= dynamicFoodRangeSq
+            }
+            val nearPredator = amoebaEaters.any { eater ->
+                val dx = food.position.x - eater.position.x
+                val dy = food.position.y - eater.position.y
+                dx * dx + dy * dy <= dynamicFoodRangeSq
+            }
+            val shouldUpdateThisFrame = nearPlayer || nearBot || nearPredator || (idx % foodUpdateStride == foodUpdatePhase)
+            if (!shouldUpdateThisFrame) {
+                return@mapIndexed food
+            }
             val botThreat = bots.minByOrNull { (food.position - it.position).getDistance() }?.position
             val predatorThreat = amoebaEaters.minByOrNull { (food.position - it.position).getDistance() }?.position
             val playerDistance = (food.position - blobPos).getDistance()
