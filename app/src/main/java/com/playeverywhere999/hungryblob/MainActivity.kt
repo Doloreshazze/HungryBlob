@@ -714,6 +714,9 @@ fun AmoebaGame() {
             playerRespawnTimer = (playerRespawnTimer - 0.02f).coerceAtLeast(0f)
             if (playerRespawnTimer <= 0f) {
                 blobPos = randomFoodPosition(worldSize, blobRadius, blobPos, blobRadius * 2f, obstacles)
+                playerFoodCount = 0
+                splitEventTimer = 0f
+                hasSplitHappened = false
             }
         }
 
