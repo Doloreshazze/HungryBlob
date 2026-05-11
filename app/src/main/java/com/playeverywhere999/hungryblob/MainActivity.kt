@@ -231,7 +231,7 @@ fun AmoebaGame() {
         }
 
         if (candidateFoodToConsume == null) {
-            vacuoleProgress = 0f
+            vacuoleProgress = (vacuoleProgress - 0.04f).coerceAtLeast(0f)
             consumedFoodId = null
         } else {
             consumedFoodId = null
@@ -502,7 +502,7 @@ fun AmoebaGame() {
                 else -> null
             }
             if (candidateFood == null) {
-                bot.copy(consumedFoodId = null, vacuoleProgress = (bot.vacuoleProgress - 0.08f).coerceAtLeast(0f))
+                bot.copy(consumedFoodId = null, vacuoleProgress = (bot.vacuoleProgress - 0.04f).coerceAtLeast(0f))
             } else {
                 foodsToRemoveByBots += candidateFood.id
                 bot.copy(consumedFoodId = null, vacuoleProgress = 1f, color = candidateFood.color)
@@ -601,11 +601,6 @@ fun AmoebaGame() {
             shockStrength = shockTimer
         )
 
-        if (reachedFood || vacuoleProgress > 0f) {
-            if (vacuoleProgress >= 1f) {
-                vacuoleProgress = 0f
-            }
-        }
     }
 }
 
