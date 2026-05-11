@@ -44,7 +44,7 @@ import kotlin.math.sin
 import kotlin.math.sqrt
 import kotlin.random.Random
 
-private data class FoodParticle(val id: Long, val position: Offset, val velocity: Offset, val color: Color)
+private data class FoodParticle(val id: Long, val position: Offset, val velocity: Offset, val color: Color, val portalCooldown: Float = 0f)
 private data class ObstacleRect(val left: Float, val top: Float, val right: Float, val bottom: Float)
 private data class BotAmoeba(
     val id: Int,
@@ -54,14 +54,16 @@ private data class BotAmoeba(
     val consumedFoodId: Long? = null,
     val vacuoleProgress: Float = 0f,
     val shockTimer: Float = 0f,
-    val foodCount: Int = 0
+    val foodCount: Int = 0,
+    val portalCooldown: Float = 0f
 )
 
 private data class PoisonJellyfish(
     val id: Int,
     val position: Offset,
     val driftVelocity: Offset,
-    val driftPhase: Float
+    val driftPhase: Float,
+    val portalCooldown: Float = 0f
 )
 
 private data class AmoebaEater(
@@ -74,9 +76,12 @@ private data class AmoebaEater(
     val disguiseTimer: Float = 0f,
     val attachedToPlayer: Boolean = false,
     val satiatedTimer: Float = 0f,
-    val retreatDirection: Offset = Offset.Zero
+    val retreatDirection: Offset = Offset.Zero,
+    val portalCooldown: Float = 0f
 )
 private enum class PredatorType { TENTACLE, STINGER, EVIL_AMOEBA, PARASITE }
+private data class Portal(val id: Int, val position: Offset)
+
 private data class GameSnapshot(
     val blobPos: Offset,
     val foods: List<FoodParticle>,
@@ -95,6 +100,8 @@ private const val BOT_SOFT_REPEL_STRENGTH = 0.14f
 private const val FOOD_CAPTURE_RADIUS_FACTOR = 1.1f
 private const val GAME_PREFS = "hungry_blob_save"
 private const val GAME_STATE_KEY = "state_v2"
+private const val PORTAL_COUNT = 10
+private const val PORTAL_COOLDOWN = 0.45f
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -147,6 +154,8 @@ fun AmoebaGame() {
     var nextSplitAt by remember { mutableStateOf(10) }
     var amoebaEaters by remember { mutableStateOf(emptyList<AmoebaEater>()) }
     var playerRespawnTimer by remember { mutableStateOf(0f) }
+    var portals by remember { mutableStateOf(emptyList<Portal>()) }
+    var playerPortalCooldown by remember { mutableStateOf(0f) }
 
     DisposableEffect(lifecycleOwner, blobPos, foods, vacuoleProgress, consumedFoodId, moveHeading, nextFoodId) {
         val observer = object : DefaultLifecycleObserver {
@@ -293,6 +302,7 @@ fun AmoebaGame() {
         val foodRadius = blobRadius * 0.25f
         val botRadius = blobRadius
         val jellyRadius = blobRadius * 0.9f
+        val portalRadius = blobRadius * 0.72f
         val foodSpawnClearance = max(foodRadius, botRadius * 0.82f)
         if (bots.isEmpty()) {
             bots = List(BOT_AMOEBA_COUNT) { idx ->
@@ -353,6 +363,36 @@ fun AmoebaGame() {
             }
         }
 
+
+
+        if (portals.isEmpty()) {
+            portals = List(PORTAL_COUNT) { idx ->
+                Portal(
+                    id = idx,
+                    position = randomFoodPosition(
+                        worldSize = worldSize,
+                        padding = portalRadius * 1.8f,
+                        blobPos = blobPos,
+                        minDistanceFromBlob = blobRadius * 4f,
+                        obstacles = obstacles
+                    )
+                )
+            }
+        }
+
+        fun randomPortalDestination(excludeId: Int): Offset {
+            val options = portals.filterNot { it.id == excludeId }
+            return (if (options.isNotEmpty()) options.random() else portals.random()).position
+        }
+
+        val playerPortalHit = portals.firstOrNull { (blobPos - it.position).getDistance() < blobRadius + portalRadius * 0.6f }
+        if (playerPortalHit != null && playerPortalCooldown <= 0f && portals.size > 1) {
+            blobPos = randomPortalDestination(playerPortalHit.id)
+            moveTarget = null
+            playerPortalCooldown = PORTAL_COOLDOWN
+        } else {
+            playerPortalCooldown = (playerPortalCooldown - 0.02f).coerceAtLeast(0f)
+        }
         if (foods.size < FOOD_PARTICLE_COUNT) {
             val missing = FOOD_PARTICLE_COUNT - foods.size
             foods = foods + List(missing) {
@@ -394,6 +434,13 @@ fun AmoebaGame() {
             } else {
                 jelly.copy(position = moved, driftPhase = (jelly.driftPhase + 0.0025f) % 1f)
             }
+        }
+        jellyfish = jellyfish.map { jelly ->
+            val decayedCooldown = (jelly.portalCooldown - 0.02f).coerceAtLeast(0f)
+            val hitPortal = portals.firstOrNull { (jelly.position - it.position).getDistance() < jellyRadius + portalRadius * 0.65f }
+            if (hitPortal != null && decayedCooldown <= 0f && portals.size > 1) {
+                jelly.copy(position = randomPortalDestination(hitPortal.id), portalCooldown = PORTAL_COOLDOWN)
+            } else jelly.copy(portalCooldown = decayedCooldown)
         }
 
         val hitJelly = jellyfish.any { (it.position - blobPos).getDistance() < blobRadius + jellyRadius * 0.65f }
@@ -481,7 +528,15 @@ fun AmoebaGame() {
                 worldSize = worldSize,
                 blobRadius = blobRadius
             )
-            FoodParticle(id = food.id, position = escapedCorner.first, velocity = escapedCorner.second, color = food.color)
+            run {
+            val decayedCooldown = (food.portalCooldown - 0.02f).coerceAtLeast(0f)
+            val hitPortal = portals.firstOrNull { (escapedCorner.first - it.position).getDistance() < foodRadius + portalRadius * 0.65f }
+            if (hitPortal != null && decayedCooldown <= 0f && portals.size > 1) {
+                FoodParticle(food.id, randomPortalDestination(hitPortal.id), escapedCorner.second, food.color, PORTAL_COOLDOWN)
+            } else {
+                FoodParticle(food.id, escapedCorner.first, escapedCorner.second, food.color, decayedCooldown)
+            }
+        }
         }
 
         val botVisionRange = botRadius * 8f
@@ -563,6 +618,13 @@ fun AmoebaGame() {
                 )
                 bot.copy(position = pushed, shockTimer = newShock)
             } else bot.copy(shockTimer = newShock)
+        }
+        bots = bots.map { bot ->
+            val decayedCooldown = (bot.portalCooldown - 0.02f).coerceAtLeast(0f)
+            val hitPortal = portals.firstOrNull { (bot.position - it.position).getDistance() < botRadius + portalRadius * 0.65f }
+            if (hitPortal != null && decayedCooldown <= 0f && portals.size > 1) {
+                bot.copy(position = randomPortalDestination(hitPortal.id), portalCooldown = PORTAL_COOLDOWN)
+            } else bot.copy(portalCooldown = decayedCooldown)
         }
 
         val foodsToRemoveByBots = mutableSetOf<Long>()
@@ -736,6 +798,13 @@ fun AmoebaGame() {
                 disguiseTimer = if (eater.type == PredatorType.PARASITE && Random.nextFloat() < 0.003f) 1.2f else (eater.disguiseTimer - 0.02f).coerceAtLeast(0f)
             )
         }
+        amoebaEaters = amoebaEaters.map { eater ->
+            val decayedCooldown = (eater.portalCooldown - 0.02f).coerceAtLeast(0f)
+            val hitPortal = portals.firstOrNull { (eater.position - it.position).getDistance() < blobRadius + portalRadius * 0.7f }
+            if (hitPortal != null && decayedCooldown <= 0f && portals.size > 1 && !eater.attachedToPlayer) {
+                eater.copy(position = randomPortalDestination(hitPortal.id), portalCooldown = PORTAL_COOLDOWN)
+            } else eater.copy(portalCooldown = decayedCooldown)
+        }
         if (parasiteDrain > 0) {
             playerFoodCount = (playerFoodCount - parasiteDrain / 40).coerceAtLeast(0)
             if (moveTarget != null) moveTarget = blobPos + (moveTarget!! - blobPos) * (1f - playerControlPenalty)
@@ -786,6 +855,12 @@ fun AmoebaGame() {
                 topLeft = Offset(obstacle.left, obstacle.top) - cameraTopLeft,
                 size = Size(obstacle.right - obstacle.left, obstacle.bottom - obstacle.top)
             )
+        }
+
+        portals.forEach { portal ->
+            val pulse = 0.88f + 0.18f * kotlin.math.abs(sin((morphProgress + portal.id * 0.11f) * 2f * PI.toFloat())).toFloat()
+            drawCircle(color = Color(0xFF2A1D6A), radius = portalRadius * pulse, center = portal.position - cameraTopLeft)
+            drawCircle(color = Color(0xFF7E68FF), radius = portalRadius * 0.62f * pulse, center = portal.position - cameraTopLeft)
         }
 
         foods.forEach { food ->
