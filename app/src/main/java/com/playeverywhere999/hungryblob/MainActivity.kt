@@ -53,8 +53,13 @@ private data class BotAmoeba(
     val color: Color,
     val consumedFoodId: Long? = null,
     val vacuoleProgress: Float = 0f,
-    val shockTimer: Float = 0f
+    val shockTimer: Float = 0f,
+    val predatorType: PredatorType = PredatorType.STINGER,
+    val parasiteAttachedTimer: Float = 0f,
+    val parasiteCooldown: Float = 0f,
+    val parasiteFakeFood: Boolean = false
 )
+private enum class PredatorType { TENTACLE, STINGER, ANGRY_AMOEBA, PARASITE }
 
 private data class PoisonJellyfish(
     val id: Int,
@@ -127,6 +132,9 @@ fun AmoebaGame() {
     var jellyfish by remember { mutableStateOf(emptyList<PoisonJellyfish>()) }
     var shockTimer by remember { mutableStateOf(0f) }
     var playerColor by remember { mutableStateOf(Color(0xFF83E7A0)) }
+    var foodScore by remember { mutableStateOf(0) }
+    var parasiteAttachedTime by remember { mutableStateOf(0f) }
+    var previousMoveHeading by remember { mutableStateOf(Offset(1f, 0f)) }
 
     DisposableEffect(lifecycleOwner, blobPos, foods, vacuoleProgress, consumedFoodId, moveHeading, nextFoodId) {
         val observer = object : DefaultLifecycleObserver {
@@ -198,11 +206,13 @@ fun AmoebaGame() {
         val targetDistance = toTarget.getDistance()
         val direction = if (targetDistance > 0.001f) toTarget / targetDistance else moveHeading
 
-        if (boundedTarget != null && targetDistance > speed) {
+        val controlPenalty = if (parasiteAttachedTime > 0f) 0.58f else 1f
+        val effectiveSpeed = speed * controlPenalty
+        if (boundedTarget != null && targetDistance > effectiveSpeed) {
             moveHeading = direction
             blobPos = moveWithSliding(
                 current = blobPos,
-                velocity = moveHeading * speed,
+                velocity = moveHeading * effectiveSpeed,
                 radius = blobRadius * 0.75f,
                 obstacles = obstacles,
                 worldSize = worldSize,
@@ -215,7 +225,7 @@ fun AmoebaGame() {
             val drift = if (moveHeading.getDistance() > 0.001f) moveHeading.normalized() else Offset.Zero
             blobPos = moveWithSliding(
                 current = blobPos,
-                velocity = drift * speed,
+                velocity = drift * effectiveSpeed,
                 radius = blobRadius * 0.75f,
                 obstacles = obstacles,
                 worldSize = worldSize,
@@ -237,6 +247,7 @@ fun AmoebaGame() {
             consumedFoodId = null
             vacuoleProgress = 1f
             playerColor = candidateFoodToConsume.color
+            foodScore += 1
             foods = foods.filterNot { it.id == candidateFoodToConsume.id } + FoodParticle(
                 id = nextFoodId++,
                 position = randomFoodPosition(
@@ -273,7 +284,14 @@ fun AmoebaGame() {
                     color = botColor(idx),
                     consumedFoodId = null,
                     vacuoleProgress = 0f,
-                    shockTimer = 0f
+                    shockTimer = 0f,
+                    predatorType = when (idx % 4) {
+                        0 -> PredatorType.TENTACLE
+                        1 -> PredatorType.STINGER
+                        2 -> PredatorType.ANGRY_AMOEBA
+                        else -> PredatorType.PARASITE
+                    },
+                    parasiteFakeFood = idx % 8 == 0
                 )
             }
         }
@@ -423,6 +441,7 @@ fun AmoebaGame() {
             FoodParticle(id = food.id, position = escapedCorner.first, velocity = escapedCorner.second, color = food.color)
         }
 
+        previousMoveHeading = moveHeading
         bots = bots.map { bot ->
             val nearest = foods
                 .filterNot { isFoodInWorldCorner(it.position, foodRadius, worldSize, blobRadius) }
@@ -451,7 +470,12 @@ fun AmoebaGame() {
             val botDirection = (chaseDirection + repelForce).normalized().let {
                 if (it.getDistance() > 0.001f) it else chaseDirection
             }
-            val botSpeed = speed * 0.88f
+            val botSpeed = when (bot.predatorType) {
+                PredatorType.TENTACLE -> speed * 0.55f
+                PredatorType.STINGER -> speed * 1.35f
+                PredatorType.ANGRY_AMOEBA -> speed * 0.88f
+                PredatorType.PARASITE -> if ((morphProgress * 100f + bot.id) % 11f < 1.4f) 0f else speed * 0.92f
+            }
             val moved = moveWithSliding(
                 current = bot.position,
                 velocity = botDirection * botSpeed,
@@ -494,6 +518,9 @@ fun AmoebaGame() {
         }
 
         val foodsToRemoveByBots = mutableSetOf<Long>()
+        val headingShake = (moveHeading - previousMoveHeading).getDistance()
+        val wallCrash = blobPos.x <= movementPadding + 1f || blobPos.x >= worldSize.width - movementPadding - 1f ||
+            blobPos.y <= movementPadding + 1f || blobPos.y >= worldSize.height - movementPadding - 1f
         bots = bots.map { bot ->
             val nearest = foods.minByOrNull { (it.position - bot.position).getDistance() }
             val candidateFood = when {
@@ -506,6 +533,45 @@ fun AmoebaGame() {
             } else {
                 foodsToRemoveByBots += candidateFood.id
                 bot.copy(consumedFoodId = null, vacuoleProgress = 1f, color = candidateFood.color)
+            }
+        }.map { bot ->
+            val distToPlayer = (bot.position - blobPos).getDistance()
+            when (bot.predatorType) {
+                PredatorType.TENTACLE -> {
+                    if (distToPlayer < blobRadius * 2.9f && Random.nextFloat() < 0.02f) {
+                        foodScore = 0
+                        val pull = (bot.position - blobPos).normalized()
+                        blobPos = moveWithSliding(blobPos, pull * (speed * 2.7f), blobRadius * 0.75f, obstacles, worldSize, movementPadding)
+                    }
+                    bot
+                }
+                PredatorType.STINGER -> {
+                    if (distToPlayer < blobRadius * 1.25f) {
+                        foodScore = 0
+                        val dartAway = (bot.position - blobPos).normalized()
+                        bot.copy(position = moveWithSliding(bot.position, dartAway * (speed * 3.2f), botRadius, obstacles, worldSize, botRadius))
+                    } else bot
+                }
+                PredatorType.ANGRY_AMOEBA -> bot
+                PredatorType.PARASITE -> {
+                    val canLatch = bot.parasiteCooldown <= 0f && parasiteAttachedTime <= 0f && distToPlayer < blobRadius * 1.15f
+                    if (canLatch) {
+                        foodScore = max(0, foodScore - 1)
+                        parasiteAttachedTime = 2.6f
+                        bot.copy(parasiteAttachedTimer = 2.6f, parasiteCooldown = 3.4f)
+                    } else {
+                        val newAttached = (bot.parasiteAttachedTimer - 0.03f).coerceAtLeast(0f)
+                        val newCooldown = (bot.parasiteCooldown - 0.03f).coerceAtLeast(0f)
+                        bot.copy(parasiteAttachedTimer = newAttached, parasiteCooldown = newCooldown)
+                    }
+                }
+            }
+        }
+        if (parasiteAttachedTime > 0f) {
+            parasiteAttachedTime = (parasiteAttachedTime - 0.03f).coerceAtLeast(0f)
+            if (headingShake > 0.25f || wallCrash) parasiteAttachedTime = 0f
+            if (Random.nextFloat() < 0.06f) {
+                foodScore = max(0, foodScore - 1)
             }
         }
         if (foodsToRemoveByBots.isNotEmpty()) {
@@ -559,6 +625,12 @@ fun AmoebaGame() {
         }
 
         bots.forEach { bot ->
+            val botBodyColor = when (bot.predatorType) {
+                PredatorType.TENTACLE -> Color(0xFF5E7CE2)
+                PredatorType.STINGER -> Color(0xFFE66D5C)
+                PredatorType.ANGRY_AMOEBA -> Color(0xFF86C96A)
+                PredatorType.PARASITE -> Color(0x889EE6D8)
+            }
             drawAmoebaBody(
                 center = bot.position - cameraTopLeft,
                 baseRadius = blobRadius,
@@ -567,7 +639,7 @@ fun AmoebaGame() {
                 engulfing = bot.consumedFoodId != null || bot.vacuoleProgress > 0f,
                 foodScreenPosition = foods.firstOrNull { it.id == bot.consumedFoodId }?.position?.minus(cameraTopLeft),
                 engulfProgress = bot.vacuoleProgress,
-                bodyColor = bot.color
+                bodyColor = botBodyColor
             )
             drawEyes(
                 center = bot.position - cameraTopLeft,
@@ -578,6 +650,25 @@ fun AmoebaGame() {
                 shocked = bot.shockTimer > 0f,
                 shockStrength = bot.shockTimer
             )
+            if (bot.predatorType == PredatorType.TENTACLE) {
+                val tip = bot.position - cameraTopLeft + bot.heading.normalized() * (blobRadius * 1.8f)
+                drawLine(Color(0xFFE0EEFF), bot.position - cameraTopLeft, tip, strokeWidth = blobRadius * 0.08f)
+            }
+            if (bot.predatorType == PredatorType.PARASITE) {
+                if (bot.parasiteFakeFood && bot.parasiteCooldown <= 0f && ((morphProgress + bot.id * 0.11f) % 1f) < 0.35f) {
+                    drawCircle(
+                        color = Color(0x88F6D17D),
+                        radius = blobRadius * 0.2f,
+                        center = bot.position - cameraTopLeft
+                    )
+                }
+                repeat(4) { t ->
+                    val angle = (morphProgress * 2f * PI.toFloat()) + t * (PI.toFloat() / 2f)
+                    val arm = Offset(cos(angle).toFloat(), sin(angle).toFloat()) * (blobRadius * 1.15f)
+                    drawLine(Color(0x88D4FFF5), bot.position - cameraTopLeft, bot.position - cameraTopLeft + arm, strokeWidth = blobRadius * 0.03f)
+                }
+                drawCircle(Color(0x99FF4D73), blobRadius * 0.22f, bot.position - cameraTopLeft)
+            }
         }
 
         val consumedFoodScreenPos = candidateFoodToConsume?.position?.minus(cameraTopLeft)
