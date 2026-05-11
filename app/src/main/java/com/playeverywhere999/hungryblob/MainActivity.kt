@@ -114,7 +114,6 @@ fun AmoebaGame() {
     val lifecycleOwner = LocalLifecycleOwner.current
     val density = LocalDensity.current
     val loadedSnapshot = remember { loadSnapshot(context) }
-    val hasSavedSession = loadedSnapshot != null
     val initialSnapshot = loadedSnapshot ?: GameSnapshot(
             blobPos = Offset(400f, 700f),
             foods = emptyList(),
@@ -145,7 +144,7 @@ fun AmoebaGame() {
     var playerColor by remember { mutableStateOf(Color(0xFF83E7A0)) }
     var playerFoodCount by remember { mutableStateOf(0) }
     var splitEventTimer by remember { mutableStateOf(0f) }
-    var hasSplitHappened by remember { mutableStateOf(hasSavedSession) }
+    var nextSplitAt by remember { mutableStateOf(10) }
     var amoebaEaters by remember { mutableStateOf(emptyList<AmoebaEater>()) }
     var playerRespawnTimer by remember { mutableStateOf(0f) }
 
@@ -259,8 +258,8 @@ fun AmoebaGame() {
             consumedFoodId = null
             vacuoleProgress = 1f
             playerFoodCount += 1
-            if (!hasSplitHappened && playerFoodCount >= 10) {
-                hasSplitHappened = true
+            if (playerFoodCount >= nextSplitAt) {
+                nextSplitAt += 10
                 splitEventTimer = 1f
                 if (bots.size < BOT_AMOEBA_COUNT) {
                     val splitDir = Offset(cos(morphProgress * 2f * PI.toFloat()), sin(morphProgress * 2f * PI.toFloat())).normalized()
@@ -746,7 +745,7 @@ fun AmoebaGame() {
         if (hitByEvil) {
             playerRespawnTimer = 2.5f
             playerFoodCount = 0
-            hasSplitHappened = false
+            nextSplitAt = 10
         }
         if (playerRespawnTimer > 0f) {
             playerRespawnTimer = (playerRespawnTimer - 0.02f).coerceAtLeast(0f)
@@ -754,7 +753,7 @@ fun AmoebaGame() {
                 blobPos = randomFoodPosition(worldSize, blobRadius, blobPos, blobRadius * 2f, obstacles)
                 playerFoodCount = 0
                 splitEventTimer = 0f
-                hasSplitHappened = false
+                nextSplitAt = 10
             }
         }
 
