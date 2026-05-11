@@ -627,8 +627,13 @@ fun AmoebaGame() {
         val eatenBotIds = mutableSetOf<Int>()
         var parasiteDrain = 0
         var playerControlPenalty = 0f
+        val predatorVisionRange = (blobRadius * 1.05f) * 10f
         amoebaEaters = amoebaEaters.map { eater ->
-            val preyPos = bots.minByOrNull { (it.position - eater.position).getDistance() }?.position ?: blobPos
+            val visibleBots = bots.filter { (it.position - eater.position).getDistance() <= predatorVisionRange }
+            val visiblePlayer = alive && (blobPos - eater.position).getDistance() <= predatorVisionRange
+            val preyPos = visibleBots.minByOrNull { (it.position - eater.position).getDistance() }?.position
+                ?: if (visiblePlayer) blobPos else null
+                ?: eater.position
             val pursuit = (preyPos - eater.position).normalized().let { if (it.getDistance() > 0.001f) it else eater.heading }
             val localSpeed = when (eater.type) {
                 PredatorType.TENTACLE -> speed * 0.7f
@@ -636,7 +641,15 @@ fun AmoebaGame() {
                 PredatorType.EVIL_AMOEBA -> speed * 0.9f
                 PredatorType.PARASITE -> if (eater.disguiseTimer > 0f) 0f else speed * 0.85f
             }
-            val target = if (eater.type == PredatorType.PARASITE && eater.disguiseTimer > 0f) eater.position else eater.position + pursuit * localSpeed
+            val hasTarget = preyPos != eater.position
+            val target = if (eater.type == PredatorType.PARASITE && eater.disguiseTimer > 0f) {
+                eater.position
+            } else if (hasTarget) {
+                eater.position + pursuit * localSpeed
+            } else {
+                val wanderAngle = Random.nextFloat() * 2f * PI.toFloat()
+                eater.position + Offset(cos(wanderAngle), sin(wanderAngle)) * (localSpeed * 0.6f)
+            }
             val moved = if (eater.type == PredatorType.PARASITE) {
                 Offset(
                     x = target.x.coerceIn(blobRadius, worldSize.width - blobRadius),
