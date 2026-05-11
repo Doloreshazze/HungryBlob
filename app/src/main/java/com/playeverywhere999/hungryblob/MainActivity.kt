@@ -142,7 +142,7 @@ fun AmoebaGame() {
     var jellyfish by remember { mutableStateOf(emptyList<PoisonJellyfish>()) }
     var shockTimer by remember { mutableStateOf(0f) }
     var playerColor by remember { mutableStateOf(Color(0xFF83E7A0)) }
-    var playerFoodCount by remember { mutableStateOf(if (hasSavedSession) 10 else 0) }
+    var playerFoodCount by remember { mutableStateOf(0) }
     var splitEventTimer by remember { mutableStateOf(0f) }
     var hasSplitHappened by remember { mutableStateOf(hasSavedSession) }
     var amoebaEaters by remember { mutableStateOf(emptyList<AmoebaEater>()) }
