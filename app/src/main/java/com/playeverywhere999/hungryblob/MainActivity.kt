@@ -486,7 +486,10 @@ fun AmoebaGame() {
 
         val botVisionRange = botRadius * 8f
         bots = bots.map { bot ->
-            val visibleFoods = foods.filter { (it.position - bot.position).getDistance() <= botVisionRange }
+            val visibleFoods = foods.filter {
+                (it.position - bot.position).getDistance() <= botVisionRange &&
+                    hasLineOfSight(bot.position, it.position, obstacles)
+            }
             val nearest = visibleFoods
                 .filterNot { isFoodInWorldCorner(it.position, foodRadius, worldSize, blobRadius) }
                 .ifEmpty { visibleFoods }
@@ -629,8 +632,13 @@ fun AmoebaGame() {
         var playerControlPenalty = 0f
         val predatorVisionRange = (blobRadius * 1.05f) * 10f
         amoebaEaters = amoebaEaters.map { eater ->
-            val visibleBots = bots.filter { (it.position - eater.position).getDistance() <= predatorVisionRange }
-            val visiblePlayer = alive && (blobPos - eater.position).getDistance() <= predatorVisionRange
+            val visibleBots = bots.filter {
+                (it.position - eater.position).getDistance() <= predatorVisionRange &&
+                    hasLineOfSight(eater.position, it.position, obstacles)
+            }
+            val visiblePlayer = alive &&
+                (blobPos - eater.position).getDistance() <= predatorVisionRange &&
+                hasLineOfSight(eater.position, blobPos, obstacles)
             val preyPos = visibleBots.minByOrNull { (it.position - eater.position).getDistance() }?.position
                 ?: if (visiblePlayer) blobPos else null
                 ?: eater.position
@@ -997,17 +1005,49 @@ private fun randomFoodPosition(
             y = Random.nextFloat() * (worldSize.height - padding * 2f) + padding
         )
         val farFromBlob = (candidate - blobPos).getDistance() >= minDistanceFromBlob
-        if (farFromBlob && !collidesWithObstacles(candidate, padding, obstacles)) return candidate
+        if (farFromBlob && !collidesWithObstacles(candidate, padding, obstacles) && !isInEnclosedArea(candidate, worldSize, obstacles)) return candidate
     }
     repeat(40) {
         val fallback = Offset(
             x = Random.nextFloat() * (worldSize.width - padding * 2f) + padding,
             y = Random.nextFloat() * (worldSize.height - padding * 2f) + padding
         )
-        if (!collidesWithObstacles(fallback, padding, obstacles)) return fallback
+        if (!collidesWithObstacles(fallback, padding, obstacles) && !isInEnclosedArea(fallback, worldSize, obstacles)) return fallback
     }
 
     return Offset(worldSize.width * 0.5f, worldSize.height * 0.5f)
+}
+
+private fun isInEnclosedArea(position: Offset, worldSize: Size, obstacles: List<ObstacleRect>): Boolean {
+    val step = 18f
+    fun blockedInDirection(dx: Float, dy: Float): Boolean {
+        var probe = position
+        while (probe.x in 0f..worldSize.width && probe.y in 0f..worldSize.height) {
+            probe += Offset(dx, dy) * step
+            if (probe.x !in 0f..worldSize.width || probe.y !in 0f..worldSize.height) return false
+            if (collidesWithObstacles(probe, step * 0.75f, obstacles)) return true
+        }
+        return false
+    }
+    return blockedInDirection(1f, 0f) &&
+        blockedInDirection(-1f, 0f) &&
+        blockedInDirection(0f, 1f) &&
+        blockedInDirection(0f, -1f)
+}
+
+private fun hasLineOfSight(from: Offset, to: Offset, obstacles: List<ObstacleRect>): Boolean {
+    val delta = to - from
+    val distance = delta.getDistance()
+    if (distance < 0.001f) return true
+    val dir = delta / distance
+    val step = 20f
+    var traveled = 0f
+    while (traveled < distance) {
+        val p = from + dir * traveled
+        if (collidesWithObstacles(p, step * 0.5f, obstacles)) return false
+        traveled += step
+    }
+    return true
 }
 
 private fun moveWithSliding(
