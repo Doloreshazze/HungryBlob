@@ -300,8 +300,7 @@ fun AmoebaGame() {
                         2 -> PredatorType.ANGRY_AMOEBA
                         else -> PredatorType.PARASITE
                     },
-                    parasiteFakeFood = idx % 8 == 0
-                    ,
+                    parasiteFakeFood = idx % 8 == 0,
                     foodCount = 0
                 )
             }
