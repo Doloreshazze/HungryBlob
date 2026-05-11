@@ -57,9 +57,11 @@ private data class BotAmoeba(
     val predatorType: PredatorType = PredatorType.STINGER,
     val parasiteAttachedTimer: Float = 0f,
     val parasiteCooldown: Float = 0f,
-    val parasiteFakeFood: Boolean = false
+    val parasiteFakeFood: Boolean = false,
+    val foodCount: Int = 0
 )
 private enum class PredatorType { TENTACLE, STINGER, ANGRY_AMOEBA, PARASITE }
+private data class AmoebaEater(val id: Int, val position: Offset, val velocity: Offset)
 
 private data class PoisonJellyfish(
     val id: Int,
@@ -120,6 +122,7 @@ fun AmoebaGame() {
         animationSpec = infiniteRepeatable(tween(2800, easing = LinearEasing), RepeatMode.Restart),
         label = "morph"
     )
+    val hasSavedSession = initialSnapshot.foods.isNotEmpty()
 
     var blobPos by remember { mutableStateOf(initialSnapshot.blobPos) }
     var cameraTopLeft by remember { mutableStateOf(Offset.Zero) }
@@ -134,8 +137,12 @@ fun AmoebaGame() {
     var shockTimer by remember { mutableStateOf(0f) }
     var playerColor by remember { mutableStateOf(Color(0xFF83E7A0)) }
     var foodScore by remember { mutableStateOf(0) }
+    var playerFoodCount by remember { mutableStateOf(if (hasSavedSession) 10 else 0) }
     var parasiteAttachedTime by remember { mutableStateOf(0f) }
     var previousMoveHeading by remember { mutableStateOf(Offset(1f, 0f)) }
+    var splitEventTimer by remember { mutableStateOf(0f) }
+    var hasSplitHappened by remember { mutableStateOf(hasSavedSession) }
+    var amoebaEaters by remember { mutableStateOf(emptyList<AmoebaEater>()) }
 
     DisposableEffect(lifecycleOwner, blobPos, foods, vacuoleProgress, consumedFoodId, moveHeading, nextFoodId) {
         val observer = object : DefaultLifecycleObserver {
@@ -249,6 +256,7 @@ fun AmoebaGame() {
             vacuoleProgress = 1f
             playerColor = candidateFoodToConsume.color
             foodScore += 1
+            playerFoodCount = foodScore
             foods = foods.filterNot { it.id == candidateFoodToConsume.id } + FoodParticle(
                 id = nextFoodId++,
                 position = randomFoodPosition(
@@ -293,6 +301,8 @@ fun AmoebaGame() {
                         else -> PredatorType.PARASITE
                     },
                     parasiteFakeFood = idx % 8 == 0
+                    ,
+                    foodCount = 0
                 )
             }
         }
@@ -541,6 +551,7 @@ fun AmoebaGame() {
                 PredatorType.TENTACLE -> {
                     if (distToPlayer < blobRadius * 2.9f && Random.nextFloat() < 0.02f) {
                         foodScore = 0
+                        playerFoodCount = 0
                         val pull = (bot.position - blobPos).normalized()
                         blobPos = moveWithSliding(blobPos, pull * (speed * 2.7f), blobRadius * 0.75f, obstacles, worldSize, movementPadding)
                     }
@@ -549,6 +560,7 @@ fun AmoebaGame() {
                 PredatorType.STINGER -> {
                     if (distToPlayer < blobRadius * 1.25f) {
                         foodScore = 0
+                        playerFoodCount = 0
                         val dartAway = (bot.position - blobPos).normalized()
                         bot.copy(position = moveWithSliding(bot.position, dartAway * (speed * 3.2f), botRadius, obstacles, worldSize, botRadius))
                     } else bot
@@ -558,6 +570,7 @@ fun AmoebaGame() {
                     val canLatch = bot.parasiteCooldown <= 0f && parasiteAttachedTime <= 0f && distToPlayer < blobRadius * 1.15f
                     if (canLatch) {
                         foodScore = max(0, foodScore - 1)
+                        playerFoodCount = foodScore
                         parasiteAttachedTime = 2.6f
                         bot.copy(parasiteAttachedTimer = 2.6f, parasiteCooldown = 3.4f)
                     } else {
@@ -573,6 +586,7 @@ fun AmoebaGame() {
             if (headingShake > 0.25f || wallCrash) parasiteAttachedTime = 0f
             if (Random.nextFloat() < 0.06f) {
                 foodScore = max(0, foodScore - 1)
+                playerFoodCount = foodScore
             }
         }
         if (foodsToRemoveByBots.isNotEmpty()) {
@@ -693,7 +707,7 @@ fun AmoebaGame() {
             shockStrength = shockTimer
         )
         drawDivisionProgress(
-            score = foodScore,
+            score = playerFoodCount,
             target = DIVISION_FOOD_TARGET,
             viewportSize = viewportSize
         )
