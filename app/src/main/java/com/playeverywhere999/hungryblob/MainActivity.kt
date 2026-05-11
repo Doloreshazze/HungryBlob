@@ -484,17 +484,20 @@ fun AmoebaGame() {
             FoodParticle(id = food.id, position = escapedCorner.first, velocity = escapedCorner.second, color = food.color)
         }
 
+        val botVisionRange = botRadius * 8f
         bots = bots.map { bot ->
-            val nearest = foods
+            val visibleFoods = foods.filter { (it.position - bot.position).getDistance() <= botVisionRange }
+            val nearest = visibleFoods
                 .filterNot { isFoodInWorldCorner(it.position, foodRadius, worldSize, blobRadius) }
-                .ifEmpty { foods }
+                .ifEmpty { visibleFoods }
                 .minByOrNull { (it.position - bot.position).getDistance() }
             val chaseDirection = if (nearest != null) {
                 val toFood = nearest.position - bot.position
                 val dist = toFood.getDistance()
                 if (dist > 0.001f) toFood / dist else bot.heading
             } else {
-                bot.heading
+                val wanderAngle = Random.nextFloat() * 2f * PI.toFloat()
+                Offset(cos(wanderAngle), sin(wanderAngle))
             }
             val repelRange = botRadius * BOT_SOFT_REPEL_RANGE_FACTOR
             val repelForce = bots.fold(Offset.Zero) { acc, other ->
