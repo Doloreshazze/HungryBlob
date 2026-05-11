@@ -73,7 +73,8 @@ private data class AmoebaEater(
     val attachTimer: Float = 0f,
     val disguiseTimer: Float = 0f,
     val attachedToPlayer: Boolean = false,
-    val satiatedTimer: Float = 0f
+    val satiatedTimer: Float = 0f,
+    val retreatDirection: Offset = Offset.Zero
 )
 private enum class PredatorType { TENTACLE, STINGER, EVIL_AMOEBA, PARASITE }
 private data class GameSnapshot(
@@ -653,6 +654,7 @@ fun AmoebaGame() {
                 ?: if (visiblePlayer) blobPos else null
                 ?: eater.position
             val pursuit = (preyPos - eater.position).normalized().let { if (it.getDistance() > 0.001f) it else eater.heading }
+            val isFleeing = eater.type == PredatorType.STINGER && eater.satiatedTimer > 0f && eater.retreatDirection.getDistance() > 0.001f
             val localSpeed = when (eater.type) {
                 PredatorType.TENTACLE -> speed * 0.7f
                 PredatorType.STINGER -> speed * 1.1f
@@ -662,6 +664,8 @@ fun AmoebaGame() {
             val hasTarget = preyPos != eater.position
             val target = if (eater.type == PredatorType.PARASITE && eater.disguiseTimer > 0f) {
                 eater.position
+            } else if (isFleeing) {
+                eater.position + eater.retreatDirection.normalized() * (localSpeed * 1.35f)
             } else if (hasTarget) {
                 eater.position + pursuit * localSpeed
             } else {
@@ -687,17 +691,41 @@ fun AmoebaGame() {
             val attach = eater.type == PredatorType.PARASITE && nearPlayer && alive
             val attached = eater.attachedToPlayer || attach
             val nextAttachTimer = if (attached) (eater.attachTimer + 0.02f).coerceAtMost(4f) else 0f
+            val stingerCaughtBot = eater.type == PredatorType.STINGER &&
+                visibleBots.any { (it.position - moved).getDistance() < blobRadius * 1.35f }
+            val stingerCaughtPlayer = eater.type == PredatorType.STINGER && alive &&
+                (blobPos - moved).getDistance() < blobRadius * 1.35f
+            val stingerFleeTriggered = stingerCaughtBot || stingerCaughtPlayer
+            val stingerVictimPos = when {
+                stingerCaughtPlayer -> blobPos
+                stingerCaughtBot -> visibleBots.minByOrNull { (it.position - moved).getDistance() }?.position ?: moved
+                else -> null
+            }
+            val stingerRetreat = if (stingerVictimPos != null) {
+                (moved - stingerVictimPos).normalized().let { if (it.getDistance() > 0.001f) it else Offset(1f, 0f) }
+            } else eater.retreatDirection
+            val screenPos = moved - cameraTopLeft
+            val leftScreen = screenPos.x < -blobRadius * 1.6f ||
+                screenPos.x > viewportSize.width + blobRadius * 1.6f ||
+                screenPos.y < -blobRadius * 1.6f ||
+                screenPos.y > viewportSize.height + blobRadius * 1.6f
+            val nextSatiatedTimer = when {
+                stingerFleeTriggered -> 2.2f
+                isFleeing && leftScreen -> 0f
+                else -> (eater.satiatedTimer - 0.02f).coerceAtLeast(0f)
+            }
             if (attached) {
                 parasiteDrain += 1
                 playerControlPenalty = 0.35f
             }
             eater.copy(
                 position = if (attached) blobPos + Offset(blobRadius * 0.8f, 0f) else moved,
-                heading = pursuit,
+                heading = if (isFleeing) eater.retreatDirection.normalized() else pursuit,
                 chompPhase = (eater.chompPhase + 0.04f) % 1f,
                 attachTimer = nextAttachTimer,
                 attachedToPlayer = attached && nextAttachTimer < 3.2f,
-                satiatedTimer = if (nextAttachTimer >= 3.2f) 1.6f else (eater.satiatedTimer - 0.02f).coerceAtLeast(0f),
+                satiatedTimer = if (nextAttachTimer >= 3.2f) 1.6f else nextSatiatedTimer,
+                retreatDirection = if (stingerFleeTriggered) stingerRetreat else if (nextSatiatedTimer <= 0f) Offset.Zero else eater.retreatDirection,
                 disguiseTimer = if (eater.type == PredatorType.PARASITE && Random.nextFloat() < 0.003f) 1.2f else (eater.disguiseTimer - 0.02f).coerceAtLeast(0f)
             )
         }
@@ -826,7 +854,7 @@ fun AmoebaGame() {
             topLeft = Offset(16f, 16f),
             size = Size(220f, 20f)
         )
-        val progress = (playerFoodCount / 10f).coerceIn(0f, 1f)
+        val progress = ((playerFoodCount % 10) / 10f).coerceIn(0f, 1f)
         drawRect(
             color = Color(0xFF72F0A0),
             topLeft = Offset(16f, 16f),
