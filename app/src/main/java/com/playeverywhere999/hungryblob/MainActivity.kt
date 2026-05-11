@@ -156,6 +156,7 @@ fun AmoebaGame() {
     var playerRespawnTimer by remember { mutableStateOf(0f) }
     var portals by remember { mutableStateOf(emptyList<Portal>()) }
     var playerPortalCooldown by remember { mutableStateOf(0f) }
+    var playerPortalLockId by remember { mutableStateOf<Int?>(null) }
 
     DisposableEffect(lifecycleOwner, blobPos, foods, vacuoleProgress, consumedFoodId, moveHeading, nextFoodId) {
         val observer = object : DefaultLifecycleObserver {
@@ -386,10 +387,20 @@ fun AmoebaGame() {
         }
 
         val playerPortalHit = portals.firstOrNull { (blobPos - it.position).getDistance() < blobRadius + portalRadius * 0.6f }
-        if (playerPortalHit != null && playerPortalCooldown <= 0f && portals.size > 1) {
-            blobPos = randomPortalDestination(playerPortalHit.id)
+        if (playerPortalHit == null) {
+            playerPortalLockId = null
+        }
+        if (
+            playerPortalHit != null &&
+            playerPortalCooldown <= 0f &&
+            portals.size > 1 &&
+            playerPortalLockId == null
+        ) {
+            val destination = portals.filterNot { it.id == playerPortalHit.id }.random()
+            blobPos = destination.position
             moveTarget = null
             playerPortalCooldown = PORTAL_COOLDOWN
+            playerPortalLockId = destination.id
         } else {
             playerPortalCooldown = (playerPortalCooldown - 0.02f).coerceAtLeast(0f)
         }
