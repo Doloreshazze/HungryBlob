@@ -63,6 +63,7 @@ private data class PoisonJellyfish(
     val driftVelocity: Offset,
     val driftPhase: Float
 )
+private data class TeleportPortal(val id: Int, val position: Offset)
 
 private data class AmoebaEater(
     val id: Int,
@@ -90,6 +91,7 @@ private const val FOOD_PARTICLE_COUNT = 440
 private const val BOT_AMOEBA_COUNT = 30
 private const val POISON_JELLYFISH_COUNT = 24
 private const val AMOEBA_EATER_COUNT = 4
+private const val PORTAL_COUNT = 10
 private const val BOT_SOFT_REPEL_RANGE_FACTOR = 1.85f
 private const val BOT_SOFT_REPEL_STRENGTH = 0.14f
 private const val FOOD_CAPTURE_RADIUS_FACTOR = 1.1f
@@ -147,6 +149,11 @@ fun AmoebaGame() {
     var nextSplitAt by remember { mutableStateOf(10) }
     var amoebaEaters by remember { mutableStateOf(emptyList<AmoebaEater>()) }
     var playerRespawnTimer by remember { mutableStateOf(0f) }
+    var portals by remember { mutableStateOf(emptyList<TeleportPortal>()) }
+    var playerInsidePortal by remember { mutableStateOf(false) }
+    var botPortalStates by remember { mutableStateOf<Map<Int, Boolean>>(emptyMap()) }
+    var jellyPortalStates by remember { mutableStateOf<Map<Int, Boolean>>(emptyMap()) }
+    var eaterPortalStates by remember { mutableStateOf<Map<Int, Boolean>>(emptyMap()) }
 
     DisposableEffect(lifecycleOwner, blobPos, foods, vacuoleProgress, consumedFoodId, moveHeading, nextFoodId) {
         val observer = object : DefaultLifecycleObserver {
@@ -202,6 +209,22 @@ fun AmoebaGame() {
         val obstacles = buildLetterObstacles(worldSize, viewportSize)
         val blobRadius = min(viewportSize.width, viewportSize.height) * 0.09f
         val movementPadding = blobRadius * 0.5f
+        val portalRadius = blobRadius * 0.85f
+
+        if (portals.isEmpty()) {
+            portals = List(PORTAL_COUNT) { idx ->
+                TeleportPortal(
+                    id = idx,
+                    position = randomFoodPosition(
+                        worldSize = worldSize,
+                        padding = portalRadius + movementPadding,
+                        blobPos = blobPos,
+                        minDistanceFromBlob = blobRadius * 4f,
+                        obstacles = obstacles
+                    )
+                )
+            }
+        }
 
         cameraTopLeft = Offset(
             x = (blobPos.x - viewportSize.width * 0.5f).coerceIn(0f, worldSize.width - viewportSize.width),
@@ -778,6 +801,55 @@ fun AmoebaGame() {
             )
         }
 
+        fun teleportIfEntered(
+            position: Offset,
+            wasInside: Boolean
+        ): Pair<Offset, Boolean> {
+            val sourcePortal = portals.firstOrNull { (position - it.position).getDistance() <= portalRadius }
+            if (sourcePortal != null && !wasInside && portals.size > 1) {
+                val destinations = portals.filter { it.id != sourcePortal.id }
+                val destination = destinations[Random.nextInt(destinations.size)]
+                val teleported = moveWithSliding(
+                    current = destination.position,
+                    velocity = Offset.Zero,
+                    radius = blobRadius * 0.8f,
+                    obstacles = obstacles,
+                    worldSize = worldSize,
+                    padding = movementPadding
+                )
+                return teleported to true
+            }
+            return position to (sourcePortal != null)
+        }
+
+        val playerTeleport = teleportIfEntered(blobPos, playerInsidePortal)
+        blobPos = playerTeleport.first
+        playerInsidePortal = playerTeleport.second
+
+        var updatedBotStates = botPortalStates
+        bots = bots.map { bot ->
+            val result = teleportIfEntered(bot.position, updatedBotStates[bot.id] == true)
+            updatedBotStates = updatedBotStates + (bot.id to result.second)
+            bot.copy(position = result.first)
+        }
+        botPortalStates = updatedBotStates.filterKeys { id -> bots.any { it.id == id } }
+
+        var updatedJellyStates = jellyPortalStates
+        jellyfish = jellyfish.map { jelly ->
+            val result = teleportIfEntered(jelly.position, updatedJellyStates[jelly.id] == true)
+            updatedJellyStates = updatedJellyStates + (jelly.id to result.second)
+            jelly.copy(position = result.first)
+        }
+        jellyPortalStates = updatedJellyStates.filterKeys { id -> jellyfish.any { it.id == id } }
+
+        var updatedEaterStates = eaterPortalStates
+        amoebaEaters = amoebaEaters.map { eater ->
+            val result = teleportIfEntered(eater.position, updatedEaterStates[eater.id] == true)
+            updatedEaterStates = updatedEaterStates + (eater.id to result.second)
+            eater.copy(position = result.first)
+        }
+        eaterPortalStates = updatedEaterStates.filterKeys { id -> amoebaEaters.any { it.id == id } }
+
         splitEventTimer = (splitEventTimer - 0.02f).coerceAtLeast(0f)
 
         obstacles.forEach { obstacle ->
@@ -785,6 +857,20 @@ fun AmoebaGame() {
                 color = Color(0xFF2B6F7F),
                 topLeft = Offset(obstacle.left, obstacle.top) - cameraTopLeft,
                 size = Size(obstacle.right - obstacle.left, obstacle.bottom - obstacle.top)
+            )
+        }
+
+        portals.forEach { portal ->
+            val center = portal.position - cameraTopLeft
+            drawCircle(
+                color = Color(0xAA42D7FF),
+                radius = portalRadius,
+                center = center
+            )
+            drawCircle(
+                color = Color(0xCCB977FF),
+                radius = portalRadius * 0.55f,
+                center = center
             )
         }
 
