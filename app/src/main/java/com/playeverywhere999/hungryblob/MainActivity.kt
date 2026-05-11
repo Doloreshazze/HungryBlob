@@ -294,7 +294,7 @@ fun AmoebaGame() {
         val botRadius = blobRadius
         val jellyRadius = blobRadius * 0.9f
         val foodSpawnClearance = max(foodRadius, botRadius * 0.82f)
-        if (bots.isEmpty() && hasSavedSession) {
+        if (bots.isEmpty()) {
             bots = List(BOT_AMOEBA_COUNT) { idx ->
                 val headingAngle = Random.nextFloat() * 2f * PI.toFloat()
                 BotAmoeba(
@@ -625,19 +625,26 @@ fun AmoebaGame() {
             val pursuit = (preyPos - eater.position).normalized().let { if (it.getDistance() > 0.001f) it else eater.heading }
             val localSpeed = when (eater.type) {
                 PredatorType.TENTACLE -> speed * 0.7f
-                PredatorType.STINGER -> speed * 1.45f
-                PredatorType.EVIL_AMOEBA -> speed
+                PredatorType.STINGER -> speed * 1.1f
+                PredatorType.EVIL_AMOEBA -> speed * 0.9f
                 PredatorType.PARASITE -> if (eater.disguiseTimer > 0f) 0f else speed * 0.85f
             }
             val target = if (eater.type == PredatorType.PARASITE && eater.disguiseTimer > 0f) eater.position else eater.position + pursuit * localSpeed
-            val moved = moveWithSliding(
-                current = target,
-                velocity = if (target == eater.position) Offset.Zero else target - eater.position,
-                radius = blobRadius * 1.05f,
-                obstacles = obstacles,
-                worldSize = worldSize,
-                padding = blobRadius
-            )
+            val moved = if (eater.type == PredatorType.PARASITE) {
+                Offset(
+                    x = target.x.coerceIn(blobRadius, worldSize.width - blobRadius),
+                    y = target.y.coerceIn(blobRadius, worldSize.height - blobRadius)
+                )
+            } else {
+                moveWithSliding(
+                    current = eater.position,
+                    velocity = if (target == eater.position) Offset.Zero else target - eater.position,
+                    radius = blobRadius * 1.05f,
+                    obstacles = obstacles,
+                    worldSize = worldSize,
+                    padding = blobRadius
+                )
+            }
             val nearPlayer = (blobPos - moved).getDistance() < blobRadius * 1.5f
             val attach = eater.type == PredatorType.PARASITE && nearPlayer && alive
             val attached = eater.attachedToPlayer || attach
