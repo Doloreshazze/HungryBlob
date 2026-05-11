@@ -68,8 +68,14 @@ private data class AmoebaEater(
     val id: Int,
     val position: Offset,
     val heading: Offset,
-    val chompPhase: Float = 0f
+    val type: PredatorType,
+    val chompPhase: Float = 0f,
+    val attachTimer: Float = 0f,
+    val disguiseTimer: Float = 0f,
+    val attachedToPlayer: Boolean = false,
+    val satiatedTimer: Float = 0f
 )
+private enum class PredatorType { TENTACLE, STINGER, EVIL_AMOEBA, PARASITE }
 private data class GameSnapshot(
     val blobPos: Offset,
     val foods: List<FoodParticle>,
@@ -140,6 +146,7 @@ fun AmoebaGame() {
     var splitEventTimer by remember { mutableStateOf(0f) }
     var hasSplitHappened by remember { mutableStateOf(hasSavedSession) }
     var amoebaEaters by remember { mutableStateOf(emptyList<AmoebaEater>()) }
+    var playerRespawnTimer by remember { mutableStateOf(0f) }
 
     DisposableEffect(lifecycleOwner, blobPos, foods, vacuoleProgress, consumedFoodId, moveHeading, nextFoodId) {
         val observer = object : DefaultLifecycleObserver {
@@ -211,7 +218,8 @@ fun AmoebaGame() {
         val targetDistance = toTarget.getDistance()
         val direction = if (targetDistance > 0.001f) toTarget / targetDistance else moveHeading
 
-        if (boundedTarget != null && targetDistance > speed) {
+        val alive = playerRespawnTimer <= 0f
+        if (alive && boundedTarget != null && targetDistance > speed) {
             moveHeading = direction
             blobPos = moveWithSliding(
                 current = blobPos,
@@ -221,10 +229,10 @@ fun AmoebaGame() {
                 worldSize = worldSize,
                 padding = movementPadding
             )
-        } else if (boundedTarget != null) {
+        } else if (alive && boundedTarget != null) {
             blobPos = boundedTarget
             moveTarget = null
-        } else {
+        } else if (alive) {
             val drift = if (moveHeading.getDistance() > 0.001f) moveHeading.normalized() else Offset.Zero
             blobPos = moveWithSliding(
                 current = blobPos,
@@ -339,7 +347,8 @@ fun AmoebaGame() {
                         minDistanceFromBlob = blobRadius * 4f,
                         obstacles = obstacles
                     ),
-                    heading = Offset(cos(angle), sin(angle))
+                    heading = Offset(cos(angle), sin(angle)),
+                    type = PredatorType.entries[idx % PredatorType.entries.size]
                 )
             }
         }
@@ -609,18 +618,47 @@ fun AmoebaGame() {
         }
 
         val eatenBotIds = mutableSetOf<Int>()
+        var parasiteDrain = 0
+        var playerControlPenalty = 0f
         amoebaEaters = amoebaEaters.map { eater ->
             val preyPos = bots.minByOrNull { (it.position - eater.position).getDistance() }?.position ?: blobPos
             val pursuit = (preyPos - eater.position).normalized().let { if (it.getDistance() > 0.001f) it else eater.heading }
+            val localSpeed = when (eater.type) {
+                PredatorType.TENTACLE -> speed * 0.7f
+                PredatorType.STINGER -> speed * 1.45f
+                PredatorType.EVIL_AMOEBA -> speed
+                PredatorType.PARASITE -> if (eater.disguiseTimer > 0f) 0f else speed * 0.85f
+            }
+            val target = if (eater.type == PredatorType.PARASITE && eater.disguiseTimer > 0f) eater.position else eater.position + pursuit * localSpeed
             val moved = moveWithSliding(
-                current = eater.position,
-                velocity = pursuit * (speed * 1.05f),
+                current = target,
+                velocity = if (target == eater.position) Offset.Zero else target - eater.position,
                 radius = blobRadius * 1.05f,
                 obstacles = obstacles,
                 worldSize = worldSize,
                 padding = blobRadius
             )
-            eater.copy(position = moved, heading = pursuit, chompPhase = (eater.chompPhase + 0.04f) % 1f)
+            val nearPlayer = (blobPos - moved).getDistance() < blobRadius * 1.5f
+            val attach = eater.type == PredatorType.PARASITE && nearPlayer && alive
+            val attached = eater.attachedToPlayer || attach
+            val nextAttachTimer = if (attached) (eater.attachTimer + 0.02f).coerceAtMost(4f) else 0f
+            if (attached) {
+                parasiteDrain += 1
+                playerControlPenalty = 0.35f
+            }
+            eater.copy(
+                position = if (attached) blobPos + Offset(blobRadius * 0.8f, 0f) else moved,
+                heading = pursuit,
+                chompPhase = (eater.chompPhase + 0.04f) % 1f,
+                attachTimer = nextAttachTimer,
+                attachedToPlayer = attached && nextAttachTimer < 3.2f,
+                satiatedTimer = if (nextAttachTimer >= 3.2f) 1.6f else (eater.satiatedTimer - 0.02f).coerceAtLeast(0f),
+                disguiseTimer = if (eater.type == PredatorType.PARASITE && Random.nextFloat() < 0.003f) 1.2f else (eater.disguiseTimer - 0.02f).coerceAtLeast(0f)
+            )
+        }
+        if (parasiteDrain > 0) {
+            playerFoodCount = (playerFoodCount - parasiteDrain / 40).coerceAtLeast(0)
+            if (moveTarget != null) moveTarget = blobPos + (moveTarget!! - blobPos) * (1f - playerControlPenalty)
         }
         amoebaEaters.forEach { eater ->
             bots.filter { (it.position - eater.position).getDistance() < blobRadius * 1.5f }
@@ -628,6 +666,20 @@ fun AmoebaGame() {
         }
         if (eatenBotIds.isNotEmpty()) {
             bots = bots.filterNot { it.id in eatenBotIds }
+        }
+        val hitByEvil = amoebaEaters.any {
+            it.type == PredatorType.EVIL_AMOEBA && (it.position - blobPos).getDistance() < blobRadius * 1.45f && alive
+        }
+        if (hitByEvil) {
+            playerRespawnTimer = 2.5f
+            playerFoodCount = 0
+            hasSplitHappened = false
+        }
+        if (playerRespawnTimer > 0f) {
+            playerRespawnTimer = (playerRespawnTimer - 0.02f).coerceAtLeast(0f)
+            if (playerRespawnTimer <= 0f) {
+                blobPos = randomFoodPosition(worldSize, blobRadius, blobPos, blobRadius * 2f, obstacles)
+            }
         }
 
         if (shockTimer > 0f) {
@@ -692,7 +744,8 @@ fun AmoebaGame() {
                 center = eater.position - cameraTopLeft,
                 radius = blobRadius * 1.05f,
                 direction = eater.heading,
-                phase = morphProgress + eater.chompPhase
+                phase = morphProgress + eater.chompPhase,
+                type = eater.type
             )
         }
 
@@ -720,6 +773,17 @@ fun AmoebaGame() {
         if (splitEventTimer > 0f) {
             drawSplitCelebration(blobPos - cameraTopLeft, blobRadius * (1f + splitEventTimer), splitEventTimer, morphProgress)
         }
+        drawRect(
+            color = Color(0xFF1B3340),
+            topLeft = Offset(16f, 16f),
+            size = Size(220f, 20f)
+        )
+        val progress = (playerFoodCount / 10f).coerceIn(0f, 1f)
+        drawRect(
+            color = Color(0xFF72F0A0),
+            topLeft = Offset(16f, 16f),
+            size = Size(220f * progress, 20f)
+        )
 
     }
 }
@@ -818,15 +882,33 @@ private fun DrawScope.drawPoisonJellyfish(center: Offset, radius: Float, phase: 
     }
 }
 
-private fun DrawScope.drawAmoebaEater(center: Offset, radius: Float, direction: Offset, phase: Float) {
+private fun DrawScope.drawAmoebaEater(center: Offset, radius: Float, direction: Offset, phase: Float, type: PredatorType) {
     val facing = if (direction.getDistance() > 0.001f) direction else Offset(1f, 0f)
     val side = Offset(-facing.y, facing.x)
-    drawCircle(Color(0xFFD64B31), radius, center)
-    drawCircle(Color(0xFFF96C4A), radius * 0.72f, center + facing * (radius * 0.1f))
-    val mouthOpen = (0.25f + kotlin.math.abs(sin(phase * 2f * PI.toFloat())).toFloat() * 0.55f)
-    drawOval(Color(0xFF2A0B0B), topLeft = center + facing * (radius * 0.08f) - Offset(radius * 0.45f, radius * 0.18f * mouthOpen), size = Size(radius * 0.9f, radius * 0.36f * mouthOpen))
-    drawCircle(Color.White, radius * 0.15f, center + facing * (radius * 0.35f) + side * (radius * 0.22f))
-    drawCircle(Color.White, radius * 0.15f, center + facing * (radius * 0.35f) - side * (radius * 0.22f))
+    when (type) {
+        PredatorType.TENTACLE -> {
+            drawCircle(Color(0xFF8A2F1D), radius, center)
+            repeat(3) { i ->
+                val ext = radius * (1.2f + if (i == 0) kotlin.math.abs(sin(phase * 5f)).toFloat() else 0.4f)
+                drawLine(Color(0xFFFFA168), center, center + facing * ext + side * ((i - 1) * radius * 0.2f), radius * 0.08f)
+            }
+        }
+        PredatorType.STINGER -> {
+            drawCircle(Color(0xFFB11D4A), radius * 0.9f, center)
+            drawLine(Color(0xFFFFE6A0), center + facing * (radius * 0.6f), center + facing * (radius * 1.4f), radius * 0.12f)
+        }
+        PredatorType.EVIL_AMOEBA -> drawCircle(Color(0xFFE94242), radius, center)
+        PredatorType.PARASITE -> {
+            drawCircle(Color(0x8877FFDD), radius * 0.9f, center)
+            drawCircle(Color(0xCC33AA88), radius * (0.28f + 0.1f * kotlin.math.abs(sin(phase * 6f)).toFloat()), center)
+            repeat(5) { i ->
+                val a = i * (2f * PI.toFloat() / 5f) + phase
+                drawLine(Color(0xAAAAFFEE), center, center + Offset(cos(a), sin(a)) * (radius * 1.5f), radius * 0.04f)
+            }
+        }
+    }
+    drawCircle(Color.White, radius * 0.12f, center + facing * (radius * 0.3f) + side * (radius * 0.18f))
+    drawCircle(Color.White, radius * 0.12f, center + facing * (radius * 0.3f) - side * (radius * 0.18f))
 }
 
 private fun DrawScope.drawSplitCelebration(center: Offset, radius: Float, t: Float, phase: Float) {
