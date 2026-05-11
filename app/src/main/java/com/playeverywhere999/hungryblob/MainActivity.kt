@@ -116,7 +116,6 @@ fun AmoebaGame() {
             moveHeading = Offset(1f, 0f),
             nextFoodId = 1L
         )
-    }
     val infiniteTransition = rememberInfiniteTransition(label = "amoeba")
     val morphProgress by infiniteTransition.animateFloat(
         initialValue = 0f,
