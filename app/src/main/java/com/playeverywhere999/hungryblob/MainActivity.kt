@@ -75,6 +75,7 @@ private const val BOT_AMOEBA_COUNT = 60
 private const val POISON_JELLYFISH_COUNT = 60
 private const val BOT_SOFT_REPEL_RANGE_FACTOR = 1.85f
 private const val BOT_SOFT_REPEL_STRENGTH = 0.14f
+private const val FOOD_CAPTURE_RADIUS_FACTOR = 1.1f
 private const val GAME_PREFS = "hungry_blob_save"
 private const val GAME_STATE_KEY = "state_v1"
 
@@ -223,7 +224,7 @@ fun AmoebaGame() {
         val nearestFood = foods.minByOrNull { (it.position - blobPos).getDistance() }
         val candidateFoodToConsume = when {
             consumedFoodId != null -> foods.firstOrNull { it.id == consumedFoodId }
-            nearestFood != null && (nearestFood.position - blobPos).getDistance() < blobRadius * 0.8f -> nearestFood
+            nearestFood != null && (nearestFood.position - blobPos).getDistance() < blobRadius * FOOD_CAPTURE_RADIUS_FACTOR -> nearestFood
             else -> null
         }
 
@@ -492,7 +493,7 @@ fun AmoebaGame() {
             val nearest = foods.minByOrNull { (it.position - bot.position).getDistance() }
             val candidateFood = when {
                 bot.consumedFoodId != null -> foods.firstOrNull { it.id == bot.consumedFoodId }
-                nearest != null && (nearest.position - bot.position).getDistance() < blobRadius * 0.8f -> nearest
+                nearest != null && (nearest.position - bot.position).getDistance() < blobRadius * FOOD_CAPTURE_RADIUS_FACTOR -> nearest
                 else -> null
             }
             if (candidateFood == null) {
