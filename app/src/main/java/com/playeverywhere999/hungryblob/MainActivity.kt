@@ -637,23 +637,31 @@ fun AmoebaGame() {
         var playerControlPenalty = 0f
         val predatorVisionRange = (blobRadius * 1.05f) * 10f
         amoebaEaters = amoebaEaters.map { eater ->
+            val isFleeing = eater.type == PredatorType.STINGER &&
+                eater.satiatedTimer > 0f &&
+                eater.retreatDirection.getDistance() > 0.001f
             val nearbyBots = bots
-                .asSequence()
-                .map { it to (it.position - eater.position).getDistance() }
-                .filter { it.second <= predatorVisionRange }
-                .sortedBy { it.second }
-                .take(5)
-                .map { it.first }
-                .toList()
-            val visibleBots = nearbyBots.filter { hasLineOfSight(eater.position, it.position, obstacles) }
-            val visiblePlayer = alive &&
-                (blobPos - eater.position).getDistance() <= predatorVisionRange &&
-                hasLineOfSight(eater.position, blobPos, obstacles)
+                .takeIf { !isFleeing }
+                ?.asSequence()
+                ?.map { it to (it.position - eater.position).getDistance() }
+                ?.filter { it.second <= predatorVisionRange }
+                ?.sortedBy { it.second }
+                ?.take(5)
+                ?.map { it.first }
+                ?.toList()
+                ?: emptyList()
+            val visibleBots = if (isFleeing) emptyList() else nearbyBots.filter { hasLineOfSight(eater.position, it.position, obstacles) }
+            val visiblePlayer = if (isFleeing) {
+                false
+            } else {
+                alive &&
+                    (blobPos - eater.position).getDistance() <= predatorVisionRange &&
+                    hasLineOfSight(eater.position, blobPos, obstacles)
+            }
             val preyPos = visibleBots.minByOrNull { (it.position - eater.position).getDistance() }?.position
                 ?: if (visiblePlayer) blobPos else null
                 ?: eater.position
             val pursuit = (preyPos - eater.position).normalized().let { if (it.getDistance() > 0.001f) it else eater.heading }
-            val isFleeing = eater.type == PredatorType.STINGER && eater.satiatedTimer > 0f && eater.retreatDirection.getDistance() > 0.001f
             val localSpeed = when (eater.type) {
                 PredatorType.TENTACLE -> speed * 0.7f
                 PredatorType.STINGER -> speed * 1.1f
