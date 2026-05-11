@@ -73,7 +73,8 @@ private data class AmoebaEater(
     val attachTimer: Float = 0f,
     val disguiseTimer: Float = 0f,
     val attachedToPlayer: Boolean = false,
-    val satiatedTimer: Float = 0f
+    val satiatedTimer: Float = 0f,
+    val retreatDirection: Offset = Offset.Zero
 )
 private enum class PredatorType { TENTACLE, STINGER, EVIL_AMOEBA, PARASITE }
 private data class GameSnapshot(
@@ -113,7 +114,6 @@ fun AmoebaGame() {
     val lifecycleOwner = LocalLifecycleOwner.current
     val density = LocalDensity.current
     val loadedSnapshot = remember { loadSnapshot(context) }
-    val hasSavedSession = loadedSnapshot != null
     val initialSnapshot = loadedSnapshot ?: GameSnapshot(
             blobPos = Offset(400f, 700f),
             foods = emptyList(),
@@ -144,7 +144,7 @@ fun AmoebaGame() {
     var playerColor by remember { mutableStateOf(Color(0xFF83E7A0)) }
     var playerFoodCount by remember { mutableStateOf(0) }
     var splitEventTimer by remember { mutableStateOf(0f) }
-    var hasSplitHappened by remember { mutableStateOf(hasSavedSession) }
+    var nextSplitAt by remember { mutableStateOf(10) }
     var amoebaEaters by remember { mutableStateOf(emptyList<AmoebaEater>()) }
     var playerRespawnTimer by remember { mutableStateOf(0f) }
 
@@ -258,8 +258,8 @@ fun AmoebaGame() {
             consumedFoodId = null
             vacuoleProgress = 1f
             playerFoodCount += 1
-            if (!hasSplitHappened && playerFoodCount >= 10) {
-                hasSplitHappened = true
+            if (playerFoodCount >= nextSplitAt) {
+                nextSplitAt += 10
                 splitEventTimer = 1f
                 if (bots.size < BOT_AMOEBA_COUNT) {
                     val splitDir = Offset(cos(morphProgress * 2f * PI.toFloat()), sin(morphProgress * 2f * PI.toFloat())).normalized()
@@ -637,18 +637,27 @@ fun AmoebaGame() {
         var playerControlPenalty = 0f
         val predatorVisionRange = (blobRadius * 1.05f) * 10f
         amoebaEaters = amoebaEaters.map { eater ->
+            val isFleeing = eater.type == PredatorType.STINGER &&
+                eater.satiatedTimer > 0f &&
+                eater.retreatDirection.getDistance() > 0.001f
             val nearbyBots = bots
-                .asSequence()
-                .map { it to (it.position - eater.position).getDistance() }
-                .filter { it.second <= predatorVisionRange }
-                .sortedBy { it.second }
-                .take(5)
-                .map { it.first }
-                .toList()
-            val visibleBots = nearbyBots.filter { hasLineOfSight(eater.position, it.position, obstacles) }
-            val visiblePlayer = alive &&
-                (blobPos - eater.position).getDistance() <= predatorVisionRange &&
-                hasLineOfSight(eater.position, blobPos, obstacles)
+                .takeIf { !isFleeing }
+                ?.asSequence()
+                ?.map { it to (it.position - eater.position).getDistance() }
+                ?.filter { it.second <= predatorVisionRange }
+                ?.sortedBy { it.second }
+                ?.take(5)
+                ?.map { it.first }
+                ?.toList()
+                ?: emptyList()
+            val visibleBots = if (isFleeing) emptyList() else nearbyBots.filter { hasLineOfSight(eater.position, it.position, obstacles) }
+            val visiblePlayer = if (isFleeing) {
+                false
+            } else {
+                alive &&
+                    (blobPos - eater.position).getDistance() <= predatorVisionRange &&
+                    hasLineOfSight(eater.position, blobPos, obstacles)
+            }
             val preyPos = visibleBots.minByOrNull { (it.position - eater.position).getDistance() }?.position
                 ?: if (visiblePlayer) blobPos else null
                 ?: eater.position
@@ -662,6 +671,8 @@ fun AmoebaGame() {
             val hasTarget = preyPos != eater.position
             val target = if (eater.type == PredatorType.PARASITE && eater.disguiseTimer > 0f) {
                 eater.position
+            } else if (isFleeing) {
+                eater.position + eater.retreatDirection.normalized() * (localSpeed * 1.35f)
             } else if (hasTarget) {
                 eater.position + pursuit * localSpeed
             } else {
@@ -687,17 +698,41 @@ fun AmoebaGame() {
             val attach = eater.type == PredatorType.PARASITE && nearPlayer && alive
             val attached = eater.attachedToPlayer || attach
             val nextAttachTimer = if (attached) (eater.attachTimer + 0.02f).coerceAtMost(4f) else 0f
+            val stingerCaughtBot = eater.type == PredatorType.STINGER &&
+                visibleBots.any { (it.position - moved).getDistance() < blobRadius * 1.35f }
+            val stingerCaughtPlayer = eater.type == PredatorType.STINGER && alive &&
+                (blobPos - moved).getDistance() < blobRadius * 1.35f
+            val stingerFleeTriggered = stingerCaughtBot || stingerCaughtPlayer
+            val stingerVictimPos = when {
+                stingerCaughtPlayer -> blobPos
+                stingerCaughtBot -> visibleBots.minByOrNull { (it.position - moved).getDistance() }?.position ?: moved
+                else -> null
+            }
+            val stingerRetreat = if (stingerVictimPos != null) {
+                (moved - stingerVictimPos).normalized().let { if (it.getDistance() > 0.001f) it else Offset(1f, 0f) }
+            } else eater.retreatDirection
+            val screenPos = moved - cameraTopLeft
+            val leftScreen = screenPos.x < -blobRadius * 1.6f ||
+                screenPos.x > viewportSize.width + blobRadius * 1.6f ||
+                screenPos.y < -blobRadius * 1.6f ||
+                screenPos.y > viewportSize.height + blobRadius * 1.6f
+            val nextSatiatedTimer = when {
+                stingerFleeTriggered -> 2.2f
+                isFleeing && leftScreen -> 0f
+                else -> (eater.satiatedTimer - 0.02f).coerceAtLeast(0f)
+            }
             if (attached) {
                 parasiteDrain += 1
                 playerControlPenalty = 0.35f
             }
             eater.copy(
                 position = if (attached) blobPos + Offset(blobRadius * 0.8f, 0f) else moved,
-                heading = pursuit,
+                heading = if (isFleeing) eater.retreatDirection.normalized() else pursuit,
                 chompPhase = (eater.chompPhase + 0.04f) % 1f,
                 attachTimer = nextAttachTimer,
                 attachedToPlayer = attached && nextAttachTimer < 3.2f,
-                satiatedTimer = if (nextAttachTimer >= 3.2f) 1.6f else (eater.satiatedTimer - 0.02f).coerceAtLeast(0f),
+                satiatedTimer = if (nextAttachTimer >= 3.2f) 1.6f else nextSatiatedTimer,
+                retreatDirection = if (stingerFleeTriggered) stingerRetreat else if (nextSatiatedTimer <= 0f) Offset.Zero else eater.retreatDirection,
                 disguiseTimer = if (eater.type == PredatorType.PARASITE && Random.nextFloat() < 0.003f) 1.2f else (eater.disguiseTimer - 0.02f).coerceAtLeast(0f)
             )
         }
@@ -718,7 +753,7 @@ fun AmoebaGame() {
         if (hitByEvil) {
             playerRespawnTimer = 2.5f
             playerFoodCount = 0
-            hasSplitHappened = false
+            nextSplitAt = 10
         }
         if (playerRespawnTimer > 0f) {
             playerRespawnTimer = (playerRespawnTimer - 0.02f).coerceAtLeast(0f)
@@ -726,7 +761,7 @@ fun AmoebaGame() {
                 blobPos = randomFoodPosition(worldSize, blobRadius, blobPos, blobRadius * 2f, obstacles)
                 playerFoodCount = 0
                 splitEventTimer = 0f
-                hasSplitHappened = false
+                nextSplitAt = 10
             }
         }
 
@@ -826,7 +861,7 @@ fun AmoebaGame() {
             topLeft = Offset(16f, 16f),
             size = Size(220f, 20f)
         )
-        val progress = (playerFoodCount / 10f).coerceIn(0f, 1f)
+        val progress = ((playerFoodCount % 10) / 10f).coerceIn(0f, 1f)
         drawRect(
             color = Color(0xFF72F0A0),
             topLeft = Offset(16f, 16f),
