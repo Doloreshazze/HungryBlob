@@ -64,6 +64,8 @@ private data class PoisonJellyfish(
     val driftPhase: Float
 )
 
+private data class Portal(val id: Int, val position: Offset)
+
 private data class AmoebaEater(
     val id: Int,
     val position: Offset,
@@ -86,10 +88,11 @@ private data class GameSnapshot(
     val nextFoodId: Long
 )
 
-private const val FOOD_PARTICLE_COUNT = 440
+private const val FOOD_PARTICLE_COUNT = 1760
 private const val BOT_AMOEBA_COUNT = 30
 private const val POISON_JELLYFISH_COUNT = 24
 private const val AMOEBA_EATER_COUNT = 4
+private const val PORTAL_COUNT = 10
 private const val BOT_SOFT_REPEL_RANGE_FACTOR = 1.85f
 private const val BOT_SOFT_REPEL_STRENGTH = 0.14f
 private const val FOOD_CAPTURE_RADIUS_FACTOR = 1.1f
@@ -147,6 +150,11 @@ fun AmoebaGame() {
     var nextSplitAt by remember { mutableStateOf(10) }
     var amoebaEaters by remember { mutableStateOf(emptyList<AmoebaEater>()) }
     var playerRespawnTimer by remember { mutableStateOf(0f) }
+    var portals by remember { mutableStateOf(emptyList<Portal>()) }
+    var playerPortalReady by remember { mutableStateOf(true) }
+    var botPortalReadyIds by remember { mutableStateOf(emptySet<Int>()) }
+    var jellyPortalReadyIds by remember { mutableStateOf(emptySet<Int>()) }
+    var eaterPortalReadyIds by remember { mutableStateOf(emptySet<Int>()) }
 
     DisposableEffect(lifecycleOwner, blobPos, foods, vacuoleProgress, consumedFoodId, moveHeading, nextFoodId) {
         val observer = object : DefaultLifecycleObserver {
@@ -353,6 +361,21 @@ fun AmoebaGame() {
             }
         }
 
+        if (portals.isEmpty()) {
+            portals = List(PORTAL_COUNT) { idx ->
+                Portal(
+                    id = idx,
+                    position = randomFoodPosition(
+                        worldSize = worldSize,
+                        padding = blobRadius * 1.6f,
+                        blobPos = blobPos,
+                        minDistanceFromBlob = blobRadius * 2.5f,
+                        obstacles = obstacles
+                    )
+                )
+            }
+        }
+
         if (foods.size < FOOD_PARTICLE_COUNT) {
             val missing = FOOD_PARTICLE_COUNT - foods.size
             foods = foods + List(missing) {
@@ -402,9 +425,15 @@ fun AmoebaGame() {
         val foodBaseSpeed = speed * 0.9f
         foods = foods.map { food ->
             val botThreat = bots.minByOrNull { (food.position - it.position).getDistance() }?.position
+            val predatorThreat = amoebaEaters.minByOrNull { (food.position - it.position).getDistance() }?.position
             val playerDistance = (food.position - blobPos).getDistance()
             val botDistance = botThreat?.let { (food.position - it).getDistance() } ?: Float.MAX_VALUE
-            val threatPos = if (playerDistance <= botDistance) blobPos else botThreat
+            val predatorDistance = predatorThreat?.let { (food.position - it).getDistance() } ?: Float.MAX_VALUE
+            val threatPos = when {
+                playerDistance <= botDistance && playerDistance <= predatorDistance -> blobPos
+                botDistance <= predatorDistance -> botThreat
+                else -> predatorThreat
+            }
 
             val away = if (threatPos != null) food.position - threatPos else Offset.Zero
             val d = away.getDistance().coerceAtLeast(0.001f)
@@ -780,12 +809,67 @@ fun AmoebaGame() {
 
         splitEventTimer = (splitEventTimer - 0.02f).coerceAtLeast(0f)
 
+        val portalRadius = blobRadius * 0.95f
+        fun randomPortalExit(exceptId: Int): Portal? {
+            val options = portals.filter { it.id != exceptId }
+            return if (options.isEmpty()) null else options.random()
+        }
+        fun nearPortal(position: Offset): Portal? = portals.firstOrNull { (it.position - position).getDistance() <= portalRadius }
+
+        if (alive) {
+            val hitPortal = nearPortal(blobPos)
+            if (hitPortal != null && playerPortalReady) {
+                randomPortalExit(hitPortal.id)?.let { exit ->
+                    blobPos = moveWithSliding(exit.position, moveHeading.normalized() * (blobRadius * 2.1f), blobRadius * 0.75f, obstacles, worldSize, movementPadding)
+                }
+                playerPortalReady = false
+            } else if (hitPortal == null) {
+                playerPortalReady = true
+            }
+        }
+
+        bots = bots.map { bot ->
+            val hitPortal = nearPortal(bot.position)
+            if (hitPortal != null && bot.id in botPortalReadyIds) {
+                val exit = randomPortalExit(hitPortal.id)
+                if (exit != null) bot.copy(position = moveWithSliding(exit.position, bot.heading.normalized() * (botRadius * 1.9f), botRadius, obstacles, worldSize, botRadius)) else bot
+            } else bot
+        }
+        val botsInsidePortal = bots.mapNotNull { b -> nearPortal(b.position)?.let { b.id } }.toSet()
+        botPortalReadyIds = (botPortalReadyIds + bots.map { it.id }).toSet() - botsInsidePortal
+
+        jellyfish = jellyfish.map { jelly ->
+            val hitPortal = nearPortal(jelly.position)
+            if (hitPortal != null && jelly.id in jellyPortalReadyIds) {
+                val exit = randomPortalExit(hitPortal.id)
+                if (exit != null) jelly.copy(position = moveWithSliding(exit.position, jelly.driftVelocity.normalized() * (jellyRadius * 1.8f), jellyRadius, obstacles, worldSize, jellyRadius + movementPadding)) else jelly
+            } else jelly
+        }
+        val jellyInsidePortal = jellyfish.mapNotNull { j -> nearPortal(j.position)?.let { j.id } }.toSet()
+        jellyPortalReadyIds = (jellyPortalReadyIds + jellyfish.map { it.id }).toSet() - jellyInsidePortal
+
+        amoebaEaters = amoebaEaters.map { eater ->
+            val hitPortal = nearPortal(eater.position)
+            if (hitPortal != null && eater.id in eaterPortalReadyIds) {
+                val exit = randomPortalExit(hitPortal.id)
+                if (exit != null) eater.copy(position = moveWithSliding(exit.position, eater.heading.normalized() * (blobRadius * 1.7f), blobRadius * 1.05f, obstacles, worldSize, blobRadius)) else eater
+            } else eater
+        }
+        val eatersInsidePortal = amoebaEaters.mapNotNull { e -> nearPortal(e.position)?.let { e.id } }.toSet()
+        eaterPortalReadyIds = (eaterPortalReadyIds + amoebaEaters.map { it.id }).toSet() - eatersInsidePortal
+
         obstacles.forEach { obstacle ->
             drawRect(
                 color = Color(0xFF2B6F7F),
                 topLeft = Offset(obstacle.left, obstacle.top) - cameraTopLeft,
                 size = Size(obstacle.right - obstacle.left, obstacle.bottom - obstacle.top)
             )
+        }
+
+        portals.forEach { portal ->
+            val center = portal.position - cameraTopLeft
+            drawCircle(color = Color(0xFF7F4BFF), radius = portalRadius, center = center)
+            drawCircle(color = Color(0xCC63F0FF), radius = portalRadius * 0.58f, center = center)
         }
 
         foods.forEach { food ->
