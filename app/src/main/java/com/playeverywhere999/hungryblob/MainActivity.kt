@@ -399,6 +399,7 @@ fun AmoebaGame() {
         val hitJelly = jellyfish.any { (it.position - blobPos).getDistance() < blobRadius + jellyRadius * 0.65f }
         shockTimer = if (hitJelly) 1f else (shockTimer - 0.03f).coerceAtLeast(0f)
 
+        val foodBaseSpeed = speed * 0.9f
         foods = foods.map { food ->
             val botThreat = bots.minByOrNull { (food.position - it.position).getDistance() }?.position
             val playerDistance = (food.position - blobPos).getDistance()
@@ -411,7 +412,10 @@ fun AmoebaGame() {
             val panic = ((blobRadius * 3.2f - d) / (blobRadius * 3.2f)).coerceIn(0f, 1f)
             val accel = escapeDir * (panic * 1.4f)
 
-            val damped = (food.velocity + accel) * 0.93f
+            val dampedRaw = (food.velocity + accel) * 0.93f
+            val damped = if (dampedRaw.getDistance() > foodBaseSpeed) {
+                dampedRaw.normalized() * foodBaseSpeed
+            } else dampedRaw
             val moved = food.position + damped
 
             val hitX = moved.x <= foodRadius || moved.x >= worldSize.width - foodRadius
