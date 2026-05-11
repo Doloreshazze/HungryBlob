@@ -88,7 +88,8 @@ private data class GameSnapshot(
     val nextFoodId: Long
 )
 
-private const val FOOD_PARTICLE_COUNT = 1760
+private const val FOOD_PARTICLE_COUNT = 640
+private const val BACKGROUND_FOOD_COUNT = 1400
 private const val BOT_AMOEBA_COUNT = 30
 private const val POISON_JELLYFISH_COUNT = 24
 private const val AMOEBA_EATER_COUNT = 4
@@ -156,6 +157,7 @@ fun AmoebaGame() {
     var jellyPortalReadyIds by remember { mutableStateOf(emptySet<Int>()) }
     var eaterPortalReadyIds by remember { mutableStateOf(emptySet<Int>()) }
     var foodUpdatePhase by remember { mutableStateOf(0) }
+    var backgroundFoods by remember { mutableStateOf(emptyList<FoodParticle>()) }
 
     DisposableEffect(lifecycleOwner, blobPos, foods, vacuoleProgress, consumedFoodId, moveHeading, nextFoodId) {
         val observer = object : DefaultLifecycleObserver {
@@ -391,6 +393,22 @@ fun AmoebaGame() {
                     ),
                     velocity = Offset.Zero,
                     color = randomFoodColor()
+                )
+            }
+        }
+        if (backgroundFoods.isEmpty()) {
+            backgroundFoods = List(BACKGROUND_FOOD_COUNT) {
+                FoodParticle(
+                    id = -1L,
+                    position = randomFoodPosition(
+                        worldSize = worldSize,
+                        padding = foodRadius * 0.7f,
+                        blobPos = blobPos,
+                        minDistanceFromBlob = blobRadius * 1.8f,
+                        obstacles = obstacles
+                    ),
+                    velocity = Offset.Zero,
+                    color = randomFoodColor().copy(alpha = 0.55f)
                 )
             }
         }
@@ -906,6 +924,11 @@ fun AmoebaGame() {
             val center = portal.position - cameraTopLeft
             drawCircle(color = Color(0xFF7F4BFF), radius = portalRadius, center = center)
             drawCircle(color = Color(0xCC63F0FF), radius = portalRadius * 0.58f, center = center)
+        }
+
+        val backgroundFoodRadius = foodRadius * 0.62f
+        backgroundFoods.forEach { food ->
+            drawCircle(color = food.color, radius = backgroundFoodRadius, center = food.position - cameraTopLeft)
         }
 
         foods.forEach { food ->
