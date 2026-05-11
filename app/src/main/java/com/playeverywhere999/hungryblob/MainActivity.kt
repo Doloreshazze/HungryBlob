@@ -396,21 +396,21 @@ fun AmoebaGame() {
                 }
             }
 
-            FoodParticle(
-                id = food.id,
+            val escapedCorner = escapeFoodFromWorldCorner(
                 position = nextPosition,
-                velocity = nudgeFoodOutOfWorldCorner(
-                    position = nextPosition,
-                    velocity = finalVelocity,
-                    foodRadius = foodRadius,
-                    worldSize = worldSize,
-                    blobRadius = blobRadius
-                )
+                velocity = finalVelocity,
+                foodRadius = foodRadius,
+                worldSize = worldSize,
+                blobRadius = blobRadius
             )
+            FoodParticle(id = food.id, position = escapedCorner.first, velocity = escapedCorner.second)
         }
 
         bots = bots.map { bot ->
-            val nearest = foods.minByOrNull { (it.position - bot.position).getDistance() }
+            val nearest = foods
+                .filterNot { isFoodInWorldCorner(it.position, foodRadius, worldSize, blobRadius) }
+                .ifEmpty { foods }
+                .minByOrNull { (it.position - bot.position).getDistance() }
             val chaseDirection = if (nearest != null) {
                 val toFood = nearest.position - bot.position
                 val dist = toFood.getDistance()
@@ -863,25 +863,37 @@ private operator fun Offset.minus(other: Offset): Offset = Offset(x - other.x, y
 private operator fun Offset.times(value: Float): Offset = Offset(x * value, y * value)
 private operator fun Offset.div(value: Float): Offset = Offset(x / value, y / value)
 private fun Offset.getDistance(): Float = sqrt(x * x + y * y)
-private fun nudgeFoodOutOfWorldCorner(
+private fun isFoodInWorldCorner(
     position: Offset,
-    velocity: Offset,
     foodRadius: Float,
     worldSize: Size,
     blobRadius: Float
-): Offset {
+): Boolean {
     val cornerBand = max(foodRadius * 2.2f, blobRadius * 0.45f)
     val nearLeft = position.x <= foodRadius + cornerBand
     val nearRight = position.x >= worldSize.width - foodRadius - cornerBand
     val nearTop = position.y <= foodRadius + cornerBand
     val nearBottom = position.y >= worldSize.height - foodRadius - cornerBand
-    val inCorner = (nearLeft || nearRight) && (nearTop || nearBottom)
-    if (!inCorner) return velocity
+    return (nearLeft || nearRight) && (nearTop || nearBottom)
+}
 
+private fun escapeFoodFromWorldCorner(
+    position: Offset,
+    velocity: Offset,
+    foodRadius: Float,
+    worldSize: Size,
+    blobRadius: Float
+): Pair<Offset, Offset> {
+    if (!isFoodInWorldCorner(position, foodRadius, worldSize, blobRadius)) return position to velocity
     val center = Offset(worldSize.width * 0.5f, worldSize.height * 0.5f)
     val outward = (center - position).normalized()
-    val kick = outward * (0.22f + Random.nextFloat() * 0.18f)
-    return (velocity * 0.8f) + kick
+    val kickStrength = 0.85f + Random.nextFloat() * 0.35f
+    val correctedPosition = Offset(
+        x = (position.x + outward.x * (foodRadius * 1.5f)).coerceIn(foodRadius, worldSize.width - foodRadius),
+        y = (position.y + outward.y * (foodRadius * 1.5f)).coerceIn(foodRadius, worldSize.height - foodRadius)
+    )
+    val correctedVelocity = (velocity * 0.55f) + outward * kickStrength
+    return correctedPosition to correctedVelocity
 }
 
 private fun Offset.normalized(): Offset {
