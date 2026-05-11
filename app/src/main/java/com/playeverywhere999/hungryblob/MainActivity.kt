@@ -82,6 +82,7 @@ private const val POISON_JELLYFISH_COUNT = 60
 private const val BOT_SOFT_REPEL_RANGE_FACTOR = 1.85f
 private const val BOT_SOFT_REPEL_STRENGTH = 0.14f
 private const val FOOD_CAPTURE_RADIUS_FACTOR = 1.1f
+private const val DIVISION_FOOD_TARGET = 24
 private const val GAME_PREFS = "hungry_blob_save"
 private const val GAME_STATE_KEY = "state_v2"
 
@@ -691,7 +692,45 @@ fun AmoebaGame() {
             shocked = shockTimer > 0f,
             shockStrength = shockTimer
         )
+        drawDivisionProgress(
+            score = foodScore,
+            target = DIVISION_FOOD_TARGET,
+            viewportSize = viewportSize
+        )
 
+    }
+}
+
+private fun DrawScope.drawDivisionProgress(score: Int, target: Int, viewportSize: Size) {
+    val safeTarget = target.coerceAtLeast(1)
+    val progress = (score.toFloat() / safeTarget.toFloat()).coerceIn(0f, 1f)
+    val remaining = (safeTarget - score).coerceAtLeast(0)
+    val barWidth = viewportSize.width * 0.46f
+    val barHeight = viewportSize.height * 0.028f
+    val left = viewportSize.width * 0.04f
+    val top = viewportSize.height * 0.045f
+    val corner = androidx.compose.ui.geometry.CornerRadius(barHeight * 0.48f, barHeight * 0.48f)
+
+    drawRoundRect(
+        color = Color(0x88212E38),
+        topLeft = Offset(left, top),
+        size = Size(barWidth, barHeight),
+        cornerRadius = corner
+    )
+    drawRoundRect(
+        color = Color(0xFF52E08A),
+        topLeft = Offset(left, top),
+        size = Size(barWidth * progress, barHeight),
+        cornerRadius = corner
+    )
+    drawContext.canvas.nativeCanvas.apply {
+        val textPaint = android.graphics.Paint().apply {
+            isAntiAlias = true
+            color = android.graphics.Color.WHITE
+            textSize = barHeight * 0.9f
+            typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
+        }
+        drawText("До деления: $remaining", left, top - barHeight * 0.35f, textPaint)
     }
 }
 
