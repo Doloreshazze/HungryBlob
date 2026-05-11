@@ -486,10 +486,15 @@ fun AmoebaGame() {
 
         val botVisionRange = botRadius * 8f
         bots = bots.map { bot ->
-            val visibleFoods = foods.filter {
-                (it.position - bot.position).getDistance() <= botVisionRange &&
-                    hasLineOfSight(bot.position, it.position, obstacles)
-            }
+            val nearbyFoods = foods
+                .asSequence()
+                .map { it to (it.position - bot.position).getDistance() }
+                .filter { it.second <= botVisionRange }
+                .sortedBy { it.second }
+                .take(6)
+                .map { it.first }
+                .toList()
+            val visibleFoods = nearbyFoods.filter { hasLineOfSight(bot.position, it.position, obstacles) }
             val nearest = visibleFoods
                 .filterNot { isFoodInWorldCorner(it.position, foodRadius, worldSize, blobRadius) }
                 .ifEmpty { visibleFoods }
@@ -632,10 +637,15 @@ fun AmoebaGame() {
         var playerControlPenalty = 0f
         val predatorVisionRange = (blobRadius * 1.05f) * 10f
         amoebaEaters = amoebaEaters.map { eater ->
-            val visibleBots = bots.filter {
-                (it.position - eater.position).getDistance() <= predatorVisionRange &&
-                    hasLineOfSight(eater.position, it.position, obstacles)
-            }
+            val nearbyBots = bots
+                .asSequence()
+                .map { it to (it.position - eater.position).getDistance() }
+                .filter { it.second <= predatorVisionRange }
+                .sortedBy { it.second }
+                .take(5)
+                .map { it.first }
+                .toList()
+            val visibleBots = nearbyBots.filter { hasLineOfSight(eater.position, it.position, obstacles) }
             val visiblePlayer = alive &&
                 (blobPos - eater.position).getDistance() <= predatorVisionRange &&
                 hasLineOfSight(eater.position, blobPos, obstacles)
