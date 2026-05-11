@@ -1041,7 +1041,7 @@ private fun hasLineOfSight(from: Offset, to: Offset, obstacles: List<ObstacleRec
     if (distance < 0.001f) return true
     val dir = delta / distance
     val step = 20f
-    var traveled = 0f
+    var traveled = step
     while (traveled < distance) {
         val p = from + dir * traveled
         if (collidesWithObstacles(p, step * 0.5f, obstacles)) return false
