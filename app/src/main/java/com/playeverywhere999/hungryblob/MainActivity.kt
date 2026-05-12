@@ -737,24 +737,39 @@ fun AmoebaGame() {
                     padding = blobRadius
                 )
             }
-            val nearPlayer = (blobPos - moved).getDistance() < blobRadius * 1.5f
+            val nearestJelly = jellyfish.minByOrNull { (it.position - moved).getDistance() }
+            val zappedByJelly = nearestJelly != null &&
+                (nearestJelly.position - moved).getDistance() < blobRadius * 1.05f + jellyRadius * 0.62f
+            val reactedPosition = if (zappedByJelly) {
+                val away = (moved - nearestJelly!!.position).normalized()
+                val retreat = if (away.getDistance() > 0.001f) away else Offset(1f, 0f)
+                moveWithSliding(
+                    current = moved,
+                    velocity = retreat * (speed * 1.7f),
+                    radius = blobRadius * 1.05f,
+                    obstacles = obstacles,
+                    worldSize = worldSize,
+                    padding = blobRadius
+                )
+            } else moved
+            val nearPlayer = (blobPos - reactedPosition).getDistance() < blobRadius * 1.5f
             val attach = eater.type == PredatorType.PARASITE && nearPlayer && alive
             val attached = eater.attachedToPlayer || attach
             val nextAttachTimer = if (attached) (eater.attachTimer + 0.02f).coerceAtMost(4f) else 0f
             val stingerCaughtBot = eater.type == PredatorType.STINGER &&
-                visibleBots.any { (it.position - moved).getDistance() < blobRadius * 1.35f }
+                visibleBots.any { (it.position - reactedPosition).getDistance() < blobRadius * 1.35f }
             val stingerCaughtPlayer = eater.type == PredatorType.STINGER && alive &&
-                (blobPos - moved).getDistance() < blobRadius * 1.35f
+                (blobPos - reactedPosition).getDistance() < blobRadius * 1.35f
             val stingerFleeTriggered = stingerCaughtBot || stingerCaughtPlayer
             val stingerVictimPos = when {
                 stingerCaughtPlayer -> blobPos
-                stingerCaughtBot -> visibleBots.minByOrNull { (it.position - moved).getDistance() }?.position ?: moved
+                stingerCaughtBot -> visibleBots.minByOrNull { (it.position - reactedPosition).getDistance() }?.position ?: reactedPosition
                 else -> null
             }
             val stingerRetreat = if (stingerVictimPos != null) {
-                (moved - stingerVictimPos).normalized().let { if (it.getDistance() > 0.001f) it else Offset(1f, 0f) }
+                (reactedPosition - stingerVictimPos).normalized().let { if (it.getDistance() > 0.001f) it else Offset(1f, 0f) }
             } else eater.retreatDirection
-            val screenPos = moved - cameraTopLeft
+            val screenPos = reactedPosition - cameraTopLeft
             val leftScreen = screenPos.x < -blobRadius * 1.6f ||
                 screenPos.x > viewportSize.width + blobRadius * 1.6f ||
                 screenPos.y < -blobRadius * 1.6f ||
@@ -769,7 +784,7 @@ fun AmoebaGame() {
                 playerControlPenalty = 0.35f
             }
             eater.copy(
-                position = if (attached) blobPos + Offset(blobRadius * 0.8f, 0f) else moved,
+                position = if (attached) blobPos + Offset(blobRadius * 0.8f, 0f) else reactedPosition,
                 heading = if (isFleeing) eater.retreatDirection.normalized() else pursuit,
                 chompPhase = (eater.chompPhase + 0.04f) % 1f,
                 attachTimer = nextAttachTimer,
