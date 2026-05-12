@@ -26,12 +26,16 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -102,10 +106,26 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        hideSystemBars()
         setContent {
             HungryBlobTheme {
                 AmoebaGame()
             }
+        }
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) {
+            hideSystemBars()
+        }
+    }
+
+    private fun hideSystemBars() {
+        WindowInsetsControllerCompat(window, window.decorView).apply {
+            hide(WindowInsetsCompat.Type.statusBars() or WindowInsetsCompat.Type.navigationBars())
+            systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         }
     }
 }
@@ -942,19 +962,90 @@ fun AmoebaGame() {
         if (splitEventTimer > 0f) {
             drawSplitCelebration(blobPos - cameraTopLeft, blobRadius * (1f + splitEventTimer), splitEventTimer, morphProgress)
         }
-        drawRect(
-            color = Color(0xFF1B3340),
-            topLeft = Offset(16f, 16f),
-            size = Size(220f, 20f)
-        )
         val progress = ((playerFoodCount % 10) / 10f).coerceIn(0f, 1f)
-        drawRect(
-            color = Color(0xFF72F0A0),
+        drawFoodGaugeAsMiniAmoeba(
             topLeft = Offset(16f, 16f),
-            size = Size(220f * progress, 20f)
+            size = Size(96f, 54f),
+            progress = progress,
+            morphProgress = morphProgress
         )
 
     }
+}
+
+
+private fun DrawScope.drawFoodGaugeAsMiniAmoeba(
+    topLeft: Offset,
+    size: Size,
+    progress: Float,
+    morphProgress: Float
+) {
+    val center = Offset(topLeft.x + size.width * 0.5f, topLeft.y + size.height * 0.5f)
+    val radius = min(size.width, size.height) * 0.42f
+    val silhouette = buildAmoebaPath(
+        center = center,
+        baseRadius = radius,
+        morphProgress = morphProgress,
+        direction = Offset(1f, 0.15f),
+        engulfing = false,
+        foodScreenPosition = null,
+        engulfProgress = 0f
+    )
+
+    drawPath(
+        path = silhouette,
+        color = Color(0xFF133342)
+    )
+
+    clipPath(silhouette) {
+        drawRect(
+            color = Color(0xFF72F0A0),
+            topLeft = Offset(topLeft.x, topLeft.y),
+            size = Size(size.width * progress, size.height)
+        )
+    }
+}
+
+private fun buildAmoebaPath(
+    center: Offset,
+    baseRadius: Float,
+    morphProgress: Float,
+    direction: Offset,
+    engulfing: Boolean,
+    foodScreenPosition: Offset?,
+    engulfProgress: Float
+): Path {
+    val path = Path()
+    val points = 48
+    val phase = (2f * PI.toFloat()) * morphProgress
+    val toFood = foodScreenPosition?.minus(center)
+    val hasFoodTarget = toFood != null && toFood.getDistance() > 0.001f
+    val foodDir = if (hasFoodTarget) toFood!! / toFood.getDistance() else direction
+
+    for (i in 0 until points) {
+        val t = i.toFloat() / points
+        val angle = (t * 2f * PI).toFloat()
+        val travelBias = (direction.x * cos(angle) + direction.y * sin(angle)).toFloat()
+        val wobble = 0.10f * sin(angle * 3f + phase).toFloat() +
+            0.06f * sin(angle * 5f - phase * 1.3f).toFloat()
+
+        val foodBias = (foodDir.x * cos(angle) + foodDir.y * sin(angle)).toFloat()
+        val mouthPull = if (engulfing) {
+            val grippingArc = (foodBias - 0.35f).coerceAtLeast(0f) / 0.65f
+            (-0.18f + 0.40f * engulfProgress) * grippingArc
+        } else {
+            0f
+        }
+        val radius = baseRadius * (1f + wobble + 0.17f * travelBias + mouthPull)
+        val point = Offset(
+            x = center.x + cos(angle).toFloat() * radius,
+            y = center.y + sin(angle).toFloat() * radius
+        )
+
+        if (i == 0) path.moveTo(point.x, point.y) else path.lineTo(point.x, point.y)
+    }
+    path.close()
+    return path
 }
 
 private fun DrawScope.drawAmoebaBody(
