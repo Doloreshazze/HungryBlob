@@ -679,6 +679,8 @@ fun AmoebaGame() {
         val eatenBotIds = mutableSetOf<Int>()
         var parasiteDrain = 0
         var playerControlPenalty = 0f
+        var stingerPlayerBites = 0
+        val stingerBittenBots = mutableSetOf<Int>()
         val predatorVisionRange = (blobRadius * 1.05f) * 10f
         amoebaEaters = amoebaEaters.map { eater ->
             val isFleeing = eater.type == PredatorType.STINGER &&
@@ -784,6 +786,12 @@ fun AmoebaGame() {
                 parasiteDrain += 1
                 playerControlPenalty = 0.35f
             }
+            if (eater.type == PredatorType.STINGER && stingerFleeTriggered) {
+                if (stingerCaughtPlayer) stingerPlayerBites += 1
+                if (stingerCaughtBot) {
+                    visibleBots.minByOrNull { (it.position - reactedPosition).getDistance() }?.id?.let { stingerBittenBots += it }
+                }
+            }
             val nextShockTimer = if (zappedByJelly) 1f else (eater.shockTimer - 0.03f).coerceAtLeast(0f)
             eater.copy(
                 position = if (attached) blobPos + Offset(blobRadius * 0.8f, 0f) else reactedPosition,
@@ -801,12 +809,20 @@ fun AmoebaGame() {
             playerFoodCount = (playerFoodCount - parasiteDrain / 40).coerceAtLeast(0)
             if (moveTarget != null) moveTarget = blobPos + (moveTarget!! - blobPos) * (1f - playerControlPenalty)
         }
-        amoebaEaters.forEach { eater ->
+        amoebaEaters.filter { it.type == PredatorType.EVIL_AMOEBA }.forEach { eater ->
             bots.filter { (it.position - eater.position).getDistance() < blobRadius * 1.5f }
                 .forEach { eatenBotIds += it.id }
         }
         if (eatenBotIds.isNotEmpty()) {
             bots = bots.filterNot { it.id in eatenBotIds }
+        }
+        if (stingerPlayerBites > 0) {
+            playerFoodCount = (playerFoodCount - stingerPlayerBites).coerceAtLeast(0)
+        }
+        if (stingerBittenBots.isNotEmpty()) {
+            bots = bots.map { bot ->
+                if (bot.id in stingerBittenBots) bot.copy(foodCount = (bot.foodCount - 1).coerceAtLeast(0)) else bot
+            }
         }
         val hitByEvil = amoebaEaters.any {
             it.type == PredatorType.EVIL_AMOEBA && (it.position - blobPos).getDistance() < blobRadius * 1.45f && alive
