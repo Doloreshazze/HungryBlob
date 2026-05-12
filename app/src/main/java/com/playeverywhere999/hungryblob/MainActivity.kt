@@ -79,7 +79,8 @@ private data class AmoebaEater(
     val disguiseTimer: Float = 0f,
     val attachedToPlayer: Boolean = false,
     val satiatedTimer: Float = 0f,
-    val retreatDirection: Offset = Offset.Zero
+    val retreatDirection: Offset = Offset.Zero,
+    val shockTimer: Float = 0f
 )
 private enum class PredatorType { TENTACLE, STINGER, EVIL_AMOEBA, PARASITE }
 private data class GameSnapshot(
@@ -783,6 +784,7 @@ fun AmoebaGame() {
                 parasiteDrain += 1
                 playerControlPenalty = 0.35f
             }
+            val nextShockTimer = if (zappedByJelly) 1f else (eater.shockTimer - 0.03f).coerceAtLeast(0f)
             eater.copy(
                 position = if (attached) blobPos + Offset(blobRadius * 0.8f, 0f) else reactedPosition,
                 heading = if (isFleeing) eater.retreatDirection.normalized() else pursuit,
@@ -791,7 +793,8 @@ fun AmoebaGame() {
                 attachedToPlayer = attached && nextAttachTimer < 3.2f,
                 satiatedTimer = if (nextAttachTimer >= 3.2f) 1.6f else nextSatiatedTimer,
                 retreatDirection = if (stingerFleeTriggered) stingerRetreat else if (nextSatiatedTimer <= 0f) Offset.Zero else eater.retreatDirection,
-                disguiseTimer = if (eater.type == PredatorType.PARASITE && Random.nextFloat() < 0.003f) 1.2f else (eater.disguiseTimer - 0.02f).coerceAtLeast(0f)
+                disguiseTimer = if (eater.type == PredatorType.PARASITE && Random.nextFloat() < 0.003f) 1.2f else (eater.disguiseTimer - 0.02f).coerceAtLeast(0f),
+                shockTimer = nextShockTimer
             )
         }
         if (parasiteDrain > 0) {
@@ -944,19 +947,14 @@ fun AmoebaGame() {
         }
 
         amoebaEaters.forEach { eater ->
-            val nearestJellyDistance = jellyfish.minOfOrNull { (it.position - eater.position).getDistance() }
-            val predatorShockRadius = blobRadius * 1.05f + jellyRadius * 0.62f
-            val shockStrength = nearestJellyDistance
-                ?.let { ((predatorShockRadius - it) / predatorShockRadius).coerceIn(0f, 1f) }
-                ?: 0f
             drawAmoebaEater(
                 center = eater.position - cameraTopLeft,
                 radius = blobRadius * 1.05f,
                 direction = eater.heading,
                 phase = morphProgress + eater.chompPhase,
                 type = eater.type,
-                shocked = shockStrength > 0f,
-                shockStrength = shockStrength
+                shocked = eater.shockTimer > 0f,
+                shockStrength = eater.shockTimer
             )
         }
 
