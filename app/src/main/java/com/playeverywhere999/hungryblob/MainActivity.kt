@@ -759,14 +759,16 @@ fun AmoebaGame() {
             val attach = eater.type == PredatorType.PARASITE && nearPlayer && alive
             val attached = eater.attachedToPlayer || attach
             val nextAttachTimer = if (attached) (eater.attachTimer + 0.02f).coerceAtMost(4f) else 0f
+            val nearestVisibleBot = visibleBots.minByOrNull { (it.position - reactedPosition).getDistance() }
             val stingerCaughtBot = eater.type == PredatorType.STINGER &&
-                visibleBots.any { (it.position - reactedPosition).getDistance() < blobRadius * 1.35f }
+                nearestVisibleBot != null &&
+                (nearestVisibleBot.position - reactedPosition).getDistance() < blobRadius * 1.35f
             val stingerCaughtPlayer = eater.type == PredatorType.STINGER && alive &&
                 (blobPos - reactedPosition).getDistance() < blobRadius * 1.35f
             val stingerFleeTriggered = stingerCaughtBot || stingerCaughtPlayer
             val stingerVictimPos = when {
                 stingerCaughtPlayer -> blobPos
-                stingerCaughtBot -> visibleBots.minByOrNull { (it.position - reactedPosition).getDistance() }?.position ?: reactedPosition
+                stingerCaughtBot -> nearestVisibleBot?.position ?: reactedPosition
                 else -> null
             }
             val stingerRetreat = if (stingerVictimPos != null) {
@@ -786,10 +788,11 @@ fun AmoebaGame() {
                 parasiteDrain += 1
                 playerControlPenalty = 0.35f
             }
-            if (eater.type == PredatorType.STINGER && stingerFleeTriggered) {
+            val stingerBiteTriggered = eater.type == PredatorType.STINGER && !isFleeing && stingerFleeTriggered
+            if (stingerBiteTriggered) {
                 if (stingerCaughtPlayer) stingerPlayerBites += 1
                 if (stingerCaughtBot) {
-                    visibleBots.minByOrNull { (it.position - reactedPosition).getDistance() }?.id?.let { stingerBittenBots += it }
+                    nearestVisibleBot?.id?.let { stingerBittenBots += it }
                 }
             }
             val nextShockTimer = if (zappedByJelly) 1f else (eater.shockTimer - 0.03f).coerceAtLeast(0f)
