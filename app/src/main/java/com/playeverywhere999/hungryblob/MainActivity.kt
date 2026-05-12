@@ -737,24 +737,39 @@ fun AmoebaGame() {
                     padding = blobRadius
                 )
             }
-            val nearPlayer = (blobPos - moved).getDistance() < blobRadius * 1.5f
+            val nearestJelly = jellyfish.minByOrNull { (it.position - moved).getDistance() }
+            val zappedByJelly = nearestJelly != null &&
+                (nearestJelly.position - moved).getDistance() < blobRadius * 1.05f + jellyRadius * 0.62f
+            val reactedPosition = if (zappedByJelly) {
+                val away = (moved - nearestJelly!!.position).normalized()
+                val retreat = if (away.getDistance() > 0.001f) away else Offset(1f, 0f)
+                moveWithSliding(
+                    current = moved,
+                    velocity = retreat * (speed * 1.7f),
+                    radius = blobRadius * 1.05f,
+                    obstacles = obstacles,
+                    worldSize = worldSize,
+                    padding = blobRadius
+                )
+            } else moved
+            val nearPlayer = (blobPos - reactedPosition).getDistance() < blobRadius * 1.5f
             val attach = eater.type == PredatorType.PARASITE && nearPlayer && alive
             val attached = eater.attachedToPlayer || attach
             val nextAttachTimer = if (attached) (eater.attachTimer + 0.02f).coerceAtMost(4f) else 0f
             val stingerCaughtBot = eater.type == PredatorType.STINGER &&
-                visibleBots.any { (it.position - moved).getDistance() < blobRadius * 1.35f }
+                visibleBots.any { (it.position - reactedPosition).getDistance() < blobRadius * 1.35f }
             val stingerCaughtPlayer = eater.type == PredatorType.STINGER && alive &&
-                (blobPos - moved).getDistance() < blobRadius * 1.35f
+                (blobPos - reactedPosition).getDistance() < blobRadius * 1.35f
             val stingerFleeTriggered = stingerCaughtBot || stingerCaughtPlayer
             val stingerVictimPos = when {
                 stingerCaughtPlayer -> blobPos
-                stingerCaughtBot -> visibleBots.minByOrNull { (it.position - moved).getDistance() }?.position ?: moved
+                stingerCaughtBot -> visibleBots.minByOrNull { (it.position - reactedPosition).getDistance() }?.position ?: reactedPosition
                 else -> null
             }
             val stingerRetreat = if (stingerVictimPos != null) {
-                (moved - stingerVictimPos).normalized().let { if (it.getDistance() > 0.001f) it else Offset(1f, 0f) }
+                (reactedPosition - stingerVictimPos).normalized().let { if (it.getDistance() > 0.001f) it else Offset(1f, 0f) }
             } else eater.retreatDirection
-            val screenPos = moved - cameraTopLeft
+            val screenPos = reactedPosition - cameraTopLeft
             val leftScreen = screenPos.x < -blobRadius * 1.6f ||
                 screenPos.x > viewportSize.width + blobRadius * 1.6f ||
                 screenPos.y < -blobRadius * 1.6f ||
@@ -769,7 +784,7 @@ fun AmoebaGame() {
                 playerControlPenalty = 0.35f
             }
             eater.copy(
-                position = if (attached) blobPos + Offset(blobRadius * 0.8f, 0f) else moved,
+                position = if (attached) blobPos + Offset(blobRadius * 0.8f, 0f) else reactedPosition,
                 heading = if (isFleeing) eater.retreatDirection.normalized() else pursuit,
                 chompPhase = (eater.chompPhase + 0.04f) % 1f,
                 attachTimer = nextAttachTimer,
@@ -929,12 +944,19 @@ fun AmoebaGame() {
         }
 
         amoebaEaters.forEach { eater ->
+            val nearestJellyDistance = jellyfish.minOfOrNull { (it.position - eater.position).getDistance() }
+            val predatorShockRadius = blobRadius * 1.05f + jellyRadius * 0.62f
+            val shockStrength = nearestJellyDistance
+                ?.let { ((predatorShockRadius - it) / predatorShockRadius).coerceIn(0f, 1f) }
+                ?: 0f
             drawAmoebaEater(
                 center = eater.position - cameraTopLeft,
                 radius = blobRadius * 1.05f,
                 direction = eater.heading,
                 phase = morphProgress + eater.chompPhase,
-                type = eater.type
+                type = eater.type,
+                shocked = shockStrength > 0f,
+                shockStrength = shockStrength
             )
         }
 
@@ -1142,7 +1164,15 @@ private fun DrawScope.drawPoisonJellyfish(center: Offset, radius: Float, phase: 
     }
 }
 
-private fun DrawScope.drawAmoebaEater(center: Offset, radius: Float, direction: Offset, phase: Float, type: PredatorType) {
+private fun DrawScope.drawAmoebaEater(
+    center: Offset,
+    radius: Float,
+    direction: Offset,
+    phase: Float,
+    type: PredatorType,
+    shocked: Boolean = false,
+    shockStrength: Float = 0f
+) {
     val facing = if (direction.getDistance() > 0.001f) direction else Offset(1f, 0f)
     val side = Offset(-facing.y, facing.x)
     when (type) {
@@ -1167,8 +1197,18 @@ private fun DrawScope.drawAmoebaEater(center: Offset, radius: Float, direction: 
             }
         }
     }
-    drawCircle(Color.White, radius * 0.12f, center + facing * (radius * 0.3f) + side * (radius * 0.18f))
-    drawCircle(Color.White, radius * 0.12f, center + facing * (radius * 0.3f) - side * (radius * 0.18f))
+    val leftEyeCenter = center + facing * (radius * 0.3f) + side * (radius * 0.18f)
+    val rightEyeCenter = center + facing * (radius * 0.3f) - side * (radius * 0.18f)
+    val eyeRadius = radius * 0.12f
+    drawCircle(Color.White, eyeRadius, leftEyeCenter)
+    drawCircle(Color.White, eyeRadius, rightEyeCenter)
+
+    val spinAngle = phase * 2f * PI.toFloat() * (6f + shockStrength * 8f)
+    val spinOffset = Offset(cos(spinAngle).toFloat(), sin(spinAngle).toFloat()) * (eyeRadius * (0.34f + shockStrength * 0.22f))
+    val idleOffset = facing * (eyeRadius * 0.3f)
+    val pupilOffset = if (shocked) spinOffset else idleOffset
+    drawCircle(Color(0xFF10131A), eyeRadius * 0.45f, leftEyeCenter + pupilOffset)
+    drawCircle(Color(0xFF10131A), eyeRadius * 0.45f, rightEyeCenter + pupilOffset)
 }
 
 private fun DrawScope.drawSplitCelebration(center: Offset, radius: Float, t: Float, phase: Float) {
