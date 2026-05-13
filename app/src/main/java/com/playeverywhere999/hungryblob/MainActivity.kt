@@ -175,8 +175,6 @@ fun AmoebaGame() {
     var botPortalStates by remember { mutableStateOf<Map<Int, Boolean>>(emptyMap()) }
     var jellyPortalStates by remember { mutableStateOf<Map<Int, Boolean>>(emptyMap()) }
     var eaterPortalStates by remember { mutableStateOf<Map<Int, Boolean>>(emptyMap()) }
-    var jellyAvoidanceCache by remember { mutableStateOf<Map<Int, Offset>>(emptyMap()) }
-    var jellyAvoidanceTick by remember { mutableStateOf(0) }
 
     DisposableEffect(lifecycleOwner, blobPos, foods, vacuoleProgress, consumedFoodId, moveHeading, nextFoodId) {
         val observer = object : DefaultLifecycleObserver {
@@ -417,52 +415,19 @@ fun AmoebaGame() {
             }
         }
 
-        val jellyAvoidRange = blobRadius * 6.2f
-        val jellyAvoidRangeSq = jellyAvoidRange * jellyAvoidRange
-        val simulationCenter = cameraTopLeft + Offset(viewportSize.width * 0.5f, viewportSize.height * 0.5f)
-        val activeSimulationRange = max(viewportSize.width, viewportSize.height) * 0.9f
-        val activeSimulationRangeSq = activeSimulationRange * activeSimulationRange
-        jellyAvoidanceTick += 1
-        if (jellyAvoidanceTick >= 6) {
-            jellyAvoidanceTick = 0
-            val recalculatedAvoidance = buildMap<Int, Offset> {
-                jellyfish.forEach { jelly ->
-                    val simDx = jelly.position.x - simulationCenter.x
-                    val simDy = jelly.position.y - simulationCenter.y
-                    val simDistanceSq = simDx * simDx + simDy * simDy
-                    if (simDistanceSq > activeSimulationRangeSq) {
-                        put(jelly.id, Offset.Zero)
-                        return@forEach
-                    }
-                    var nearestDistanceSq = Float.MAX_VALUE
-                    var nearestPredatorPos = Offset.Zero
-                    for (i in amoebaEaters.indices) {
-                        val predatorPos = amoebaEaters[i].position
-                        val dx = jelly.position.x - predatorPos.x
-                        val dy = jelly.position.y - predatorPos.y
-                        val distanceSq = dx * dx + dy * dy
-                        if (distanceSq < nearestDistanceSq) {
-                            nearestDistanceSq = distanceSq
-                            nearestPredatorPos = predatorPos
-                        }
-                    }
-                    val avoidance = if (nearestDistanceSq < jellyAvoidRangeSq) {
-                        val away = jelly.position - nearestPredatorPos
-                        val distance = sqrt(nearestDistanceSq).coerceAtLeast(0.001f)
-                        val threat = ((jellyAvoidRange - distance) / jellyAvoidRange).coerceIn(0f, 1f)
-                        away / distance * (speed * (0.55f + threat * 1.8f))
-                    } else {
-                        Offset.Zero
-                    }
-                    put(jelly.id, avoidance)
-                }
-            }
-            jellyAvoidanceCache = recalculatedAvoidance
-        }
+        val jellyAvoidRange = blobRadius * 4.8f
         jellyfish = jellyfish.map { jelly ->
             val wobbleAngle = (morphProgress * 2f * PI.toFloat()) + jelly.driftPhase * 2f * PI.toFloat()
             val wobble = Offset(cos(wobbleAngle).toFloat(), sin(wobbleAngle * 1.3f).toFloat()) * (speed * 0.08f)
-            val predatorAvoidance = jellyAvoidanceCache[jelly.id] ?: Offset.Zero
+            val nearestPredator = amoebaEaters.minByOrNull { (it.position - jelly.position).getDistance() }
+            val predatorAvoidance = if (nearestPredator != null) {
+                val away = jelly.position - nearestPredator.position
+                val distance = away.getDistance().coerceAtLeast(0.001f)
+                val threat = ((jellyAvoidRange - distance) / jellyAvoidRange).coerceIn(0f, 1f)
+                away / distance * (speed * threat * 1.2f)
+            } else {
+                Offset.Zero
+            }
             val moved = moveWithSliding(
                 current = jelly.position,
                 velocity = jelly.driftVelocity + wobble + predatorAvoidance,
@@ -482,6 +447,11 @@ fun AmoebaGame() {
             } else {
                 jelly.copy(
                     position = moved,
+                    driftVelocity = if (predatorAvoidance == Offset.Zero) {
+                        jelly.driftVelocity
+                    } else {
+                        (jelly.driftVelocity * 0.9f + predatorAvoidance * 0.1f)
+                    },
                     driftPhase = (jelly.driftPhase + 0.0025f) % 1f
                 )
             }
