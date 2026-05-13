@@ -551,20 +551,29 @@ fun AmoebaGame() {
         }
 
         val botVisionRange = botRadius * 8f
+        val botVisionRangeSq = botVisionRange * botVisionRange
         bots = bots.map { bot ->
-            val nearbyFoods = foods
-                .asSequence()
-                .map { it to (it.position - bot.position).getDistance() }
-                .filter { it.second <= botVisionRange }
-                .sortedBy { it.second }
-                .take(6)
-                .map { it.first }
-                .toList()
-            val visibleFoods = nearbyFoods.filter { hasLineOfSight(bot.position, it.position, obstacles) }
-            val nearest = visibleFoods
-                .filterNot { isFoodInWorldCorner(it.position, foodRadius, worldSize, blobRadius) }
-                .ifEmpty { visibleFoods }
-                .minByOrNull { (it.position - bot.position).getDistance() }
+            var nearestVisible: FoodParticle? = null
+            var nearestVisibleDistSq = Float.MAX_VALUE
+            var nearestVisibleNonCorner: FoodParticle? = null
+            var nearestVisibleNonCornerDistSq = Float.MAX_VALUE
+            for (i in foods.indices) {
+                val food = foods[i]
+                val dx = food.position.x - bot.position.x
+                val dy = food.position.y - bot.position.y
+                val distSq = dx * dx + dy * dy
+                if (distSq > botVisionRangeSq) continue
+                if (!hasLineOfSight(bot.position, food.position, obstacles)) continue
+                if (distSq < nearestVisibleDistSq) {
+                    nearestVisibleDistSq = distSq
+                    nearestVisible = food
+                }
+                if (!isFoodInWorldCorner(food.position, foodRadius, worldSize, blobRadius) && distSq < nearestVisibleNonCornerDistSq) {
+                    nearestVisibleNonCornerDistSq = distSq
+                    nearestVisibleNonCorner = food
+                }
+            }
+            val nearest = nearestVisibleNonCorner ?: nearestVisible
             val chaseDirection = if (nearest != null) {
                 val toFood = nearest.position - bot.position
                 val dist = toFood.getDistance()
