@@ -759,9 +759,10 @@ fun AmoebaGame() {
             val attach = eater.type == PredatorType.PARASITE && nearPlayer && alive
             val attached = eater.attachedToPlayer || attach
             val nextAttachTimer = if (attached) (eater.attachTimer + 0.02f).coerceAtMost(4f) else 0f
-            val nearestVisibleBot = visibleBots.minByOrNull { (it.position - reactedPosition).getDistance() }
-            val stingerCaughtBot = eater.type == PredatorType.STINGER &&
-                nearestVisibleBot != null &&
+            val nearestVisibleBot = if (eater.type == PredatorType.STINGER) {
+                visibleBots.minByOrNull { (it.position - reactedPosition).getDistance() }
+            } else null
+            val stingerCaughtBot = nearestVisibleBot != null &&
                 (nearestVisibleBot.position - reactedPosition).getDistance() < blobRadius * 1.35f
             val stingerCaughtPlayer = eater.type == PredatorType.STINGER && alive &&
                 (blobPos - reactedPosition).getDistance() < blobRadius * 1.35f
@@ -812,7 +813,8 @@ fun AmoebaGame() {
             playerFoodCount = (playerFoodCount - parasiteDrain / 40).coerceAtLeast(0)
             if (moveTarget != null) moveTarget = blobPos + (moveTarget!! - blobPos) * (1f - playerControlPenalty)
         }
-        amoebaEaters.filter { it.type == PredatorType.EVIL_AMOEBA }.forEach { eater ->
+        amoebaEaters.forEach { eater ->
+            if (eater.type != PredatorType.EVIL_AMOEBA) return@forEach
             bots.filter { (it.position - eater.position).getDistance() < blobRadius * 1.5f }
                 .forEach { eatenBotIds += it.id }
         }
