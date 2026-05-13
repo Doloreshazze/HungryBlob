@@ -419,11 +419,21 @@ fun AmoebaGame() {
 
         val jellyAvoidRange = blobRadius * 6.2f
         val jellyAvoidRangeSq = jellyAvoidRange * jellyAvoidRange
+        val simulationCenter = cameraTopLeft + Offset(viewportSize.width * 0.5f, viewportSize.height * 0.5f)
+        val activeSimulationRange = max(viewportSize.width, viewportSize.height) * 0.9f
+        val activeSimulationRangeSq = activeSimulationRange * activeSimulationRange
         jellyAvoidanceTick += 1
         if (jellyAvoidanceTick >= 6) {
             jellyAvoidanceTick = 0
             val recalculatedAvoidance = buildMap<Int, Offset> {
                 jellyfish.forEach { jelly ->
+                    val simDx = jelly.position.x - simulationCenter.x
+                    val simDy = jelly.position.y - simulationCenter.y
+                    val simDistanceSq = simDx * simDx + simDy * simDy
+                    if (simDistanceSq > activeSimulationRangeSq) {
+                        put(jelly.id, Offset.Zero)
+                        return@forEach
+                    }
                     var nearestDistanceSq = Float.MAX_VALUE
                     var nearestPredatorPos = Offset.Zero
                     for (i in amoebaEaters.indices) {
