@@ -419,9 +419,23 @@ fun AmoebaGame() {
         jellyfish = jellyfish.map { jelly ->
             val wobbleAngle = (morphProgress * 2f * PI.toFloat()) + jelly.driftPhase * 2f * PI.toFloat()
             val wobble = Offset(cos(wobbleAngle).toFloat(), sin(wobbleAngle * 1.3f).toFloat()) * (speed * 0.08f)
+            val nearestPredator = amoebaEaters.minByOrNull { (it.position - jelly.position).getDistance() }
+            val predatorAvoidance = if (nearestPredator != null) {
+                val away = jelly.position - nearestPredator.position
+                val distance = away.getDistance().coerceAtLeast(0.001f)
+                val avoidRange = blobRadius * 4.6f
+                val threat = ((avoidRange - distance) / avoidRange).coerceIn(0f, 1f)
+                if (threat > 0f) {
+                    away / distance * (speed * (0.35f + threat * 1.1f))
+                } else {
+                    Offset.Zero
+                }
+            } else {
+                Offset.Zero
+            }
             val moved = moveWithSliding(
                 current = jelly.position,
-                velocity = jelly.driftVelocity + wobble,
+                velocity = jelly.driftVelocity + wobble + predatorAvoidance,
                 radius = jellyRadius,
                 obstacles = obstacles,
                 worldSize = worldSize,
