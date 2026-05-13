@@ -415,33 +415,25 @@ fun AmoebaGame() {
             }
         }
 
-        val jellyAvoidRange = blobRadius * 3.6f
-        val jellyAvoidRangeSq = jellyAvoidRange * jellyAvoidRange
+        val jellyPanicRangeSq = (blobRadius * 1.8f) * (blobRadius * 1.8f)
         jellyfish = jellyfish.map { jelly ->
             val wobbleAngle = (morphProgress * 2f * PI.toFloat()) + jelly.driftPhase * 2f * PI.toFloat()
             val wobble = Offset(cos(wobbleAngle).toFloat(), sin(wobbleAngle * 1.3f).toFloat()) * (speed * 0.08f)
-            var nearestDx = 0f
-            var nearestDy = 0f
-            var nearestDistanceSq = Float.MAX_VALUE
+            var panicVelocity = Offset.Zero
             for (i in amoebaEaters.indices) {
                 val predatorPos = amoebaEaters[i].position
                 val dx = jelly.position.x - predatorPos.x
                 val dy = jelly.position.y - predatorPos.y
                 val distanceSq = dx * dx + dy * dy
-                if (distanceSq < nearestDistanceSq) {
-                    nearestDistanceSq = distanceSq
-                    nearestDx = dx
-                    nearestDy = dy
+                if (distanceSq < jellyPanicRangeSq) {
+                    val distance = sqrt(distanceSq).coerceAtLeast(0.001f)
+                    panicVelocity = Offset(dx / distance, dy / distance) * (speed * 0.95f)
+                    break
                 }
             }
-            val predatorAvoidance = if (nearestDistanceSq < jellyAvoidRangeSq) {
-                val distance = sqrt(nearestDistanceSq).coerceAtLeast(0.001f)
-                val threat = (1f - nearestDistanceSq / jellyAvoidRangeSq).coerceIn(0f, 1f)
-                Offset(nearestDx / distance, nearestDy / distance) * (speed * threat * 1.05f)
-            } else Offset.Zero
             val moved = moveWithSliding(
                 current = jelly.position,
-                velocity = jelly.driftVelocity + wobble + predatorAvoidance,
+                velocity = jelly.driftVelocity + wobble + panicVelocity,
                 radius = jellyRadius,
                 obstacles = obstacles,
                 worldSize = worldSize,
@@ -452,7 +444,11 @@ fun AmoebaGame() {
                 val newAngle = Random.nextFloat() * 2f * PI.toFloat()
                 jelly.copy(
                     position = moved,
-                    driftVelocity = Offset(cos(newAngle), sin(newAngle)) * (speed * 0.24f),
+                    driftVelocity = if (panicVelocity != Offset.Zero) {
+                        panicVelocity
+                    } else {
+                        Offset(cos(newAngle), sin(newAngle)) * (speed * 0.24f)
+                    },
                     driftPhase = (jelly.driftPhase + 0.1f) % 1f
                 )
             } else {
