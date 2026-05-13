@@ -175,6 +175,8 @@ fun AmoebaGame() {
     var botPortalStates by remember { mutableStateOf<Map<Int, Boolean>>(emptyMap()) }
     var jellyPortalStates by remember { mutableStateOf<Map<Int, Boolean>>(emptyMap()) }
     var eaterPortalStates by remember { mutableStateOf<Map<Int, Boolean>>(emptyMap()) }
+    var jellyAvoidanceCache by remember { mutableStateOf<Map<Int, Offset>>(emptyMap()) }
+    var jellyAvoidanceTick by remember { mutableStateOf(0) }
 
     DisposableEffect(lifecycleOwner, blobPos, foods, vacuoleProgress, consumedFoodId, moveHeading, nextFoodId) {
         val observer = object : DefaultLifecycleObserver {
@@ -417,27 +419,40 @@ fun AmoebaGame() {
 
         val jellyAvoidRange = blobRadius * 6.2f
         val jellyAvoidRangeSq = jellyAvoidRange * jellyAvoidRange
+        jellyAvoidanceTick += 1
+        if (jellyAvoidanceTick >= 6) {
+            jellyAvoidanceTick = 0
+            val recalculatedAvoidance = buildMap<Int, Offset> {
+                jellyfish.forEach { jelly ->
+                    var nearestDistanceSq = Float.MAX_VALUE
+                    var nearestPredatorPos = Offset.Zero
+                    for (i in amoebaEaters.indices) {
+                        val predatorPos = amoebaEaters[i].position
+                        val dx = jelly.position.x - predatorPos.x
+                        val dy = jelly.position.y - predatorPos.y
+                        val distanceSq = dx * dx + dy * dy
+                        if (distanceSq < nearestDistanceSq) {
+                            nearestDistanceSq = distanceSq
+                            nearestPredatorPos = predatorPos
+                        }
+                    }
+                    val avoidance = if (nearestDistanceSq < jellyAvoidRangeSq) {
+                        val away = jelly.position - nearestPredatorPos
+                        val distance = sqrt(nearestDistanceSq).coerceAtLeast(0.001f)
+                        val threat = ((jellyAvoidRange - distance) / jellyAvoidRange).coerceIn(0f, 1f)
+                        away / distance * (speed * (0.55f + threat * 1.8f))
+                    } else {
+                        Offset.Zero
+                    }
+                    put(jelly.id, avoidance)
+                }
+            }
+            jellyAvoidanceCache = recalculatedAvoidance
+        }
         jellyfish = jellyfish.map { jelly ->
             val wobbleAngle = (morphProgress * 2f * PI.toFloat()) + jelly.driftPhase * 2f * PI.toFloat()
             val wobble = Offset(cos(wobbleAngle).toFloat(), sin(wobbleAngle * 1.3f).toFloat()) * (speed * 0.08f)
-            var nearestDistanceSq = Float.MAX_VALUE
-            var nearestPredatorPos = Offset.Zero
-            for (i in amoebaEaters.indices) {
-                val predatorPos = amoebaEaters[i].position
-                val dx = jelly.position.x - predatorPos.x
-                val dy = jelly.position.y - predatorPos.y
-                val distanceSq = dx * dx + dy * dy
-                if (distanceSq < nearestDistanceSq) {
-                    nearestDistanceSq = distanceSq
-                    nearestPredatorPos = predatorPos
-                }
-            }
-            val predatorAvoidance = if (nearestDistanceSq < jellyAvoidRangeSq) {
-                val away = jelly.position - nearestPredatorPos
-                val distance = sqrt(nearestDistanceSq).coerceAtLeast(0.001f)
-                val threat = ((jellyAvoidRange - distance) / jellyAvoidRange).coerceIn(0f, 1f)
-                away / distance * (speed * (0.55f + threat * 1.8f))
-            } else Offset.Zero
+            val predatorAvoidance = jellyAvoidanceCache[jelly.id] ?: Offset.Zero
             val moved = moveWithSliding(
                 current = jelly.position,
                 velocity = jelly.driftVelocity + wobble + predatorAvoidance,
