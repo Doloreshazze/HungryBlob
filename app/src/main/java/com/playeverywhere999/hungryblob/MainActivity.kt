@@ -92,9 +92,9 @@ private data class GameSnapshot(
     val nextFoodId: Long
 )
 
-private const val FOOD_PARTICLE_COUNT = 440
+private const val FOOD_PARTICLE_COUNT = 260
 private const val BOT_AMOEBA_COUNT = 30
-private const val POISON_JELLYFISH_COUNT = 24
+private const val POISON_JELLYFISH_COUNT = 16
 private const val AMOEBA_EATER_COUNT = 4
 private const val PORTAL_COUNT = 10
 private const val BOT_SOFT_REPEL_RANGE_FACTOR = 1.85f
