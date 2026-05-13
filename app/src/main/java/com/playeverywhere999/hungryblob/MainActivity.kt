@@ -175,6 +175,7 @@ fun AmoebaGame() {
     var botPortalStates by remember { mutableStateOf<Map<Int, Boolean>>(emptyMap()) }
     var jellyPortalStates by remember { mutableStateOf<Map<Int, Boolean>>(emptyMap()) }
     var eaterPortalStates by remember { mutableStateOf<Map<Int, Boolean>>(emptyMap()) }
+    var simulationTick by remember { mutableStateOf(0) }
 
     DisposableEffect(lifecycleOwner, blobPos, foods, vacuoleProgress, consumedFoodId, moveHeading, nextFoodId) {
         val observer = object : DefaultLifecycleObserver {
@@ -224,6 +225,7 @@ fun AmoebaGame() {
                 )
             }
     ) {
+        simulationTick += 1
         val speed = with(density) { 2.5f }
         val viewportSize = size
         val worldSize = Size(viewportSize.width * 10f, viewportSize.height * 4f)
@@ -463,7 +465,8 @@ fun AmoebaGame() {
         shockTimer = if (hitJelly) 1f else (shockTimer - 0.03f).coerceAtLeast(0f)
 
         val foodBaseSpeed = speed * 0.9f
-        foods = foods.map { food ->
+        if (simulationTick % 2 == 0) {
+            foods = foods.map { food ->
             val botThreat = bots.minByOrNull { (food.position - it.position).getDistance() }?.position
             val playerDistance = (food.position - blobPos).getDistance()
             val botDistance = botThreat?.let { (food.position - it).getDistance() } ?: Float.MAX_VALUE
@@ -544,7 +547,8 @@ fun AmoebaGame() {
                 worldSize = worldSize,
                 blobRadius = blobRadius
             )
-            FoodParticle(id = food.id, position = escapedCorner.first, velocity = escapedCorner.second, color = food.color)
+                FoodParticle(id = food.id, position = escapedCorner.first, velocity = escapedCorner.second, color = food.color)
+            }
         }
 
         val botVisionRange = botRadius * 8f
