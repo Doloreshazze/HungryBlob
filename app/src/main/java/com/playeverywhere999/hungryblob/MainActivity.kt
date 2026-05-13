@@ -415,19 +415,30 @@ fun AmoebaGame() {
             }
         }
 
-        val jellyAvoidRange = blobRadius * 4.8f
+        val jellyAvoidRange = blobRadius * 3.6f
+        val jellyAvoidRangeSq = jellyAvoidRange * jellyAvoidRange
         jellyfish = jellyfish.map { jelly ->
             val wobbleAngle = (morphProgress * 2f * PI.toFloat()) + jelly.driftPhase * 2f * PI.toFloat()
             val wobble = Offset(cos(wobbleAngle).toFloat(), sin(wobbleAngle * 1.3f).toFloat()) * (speed * 0.08f)
-            val nearestPredator = amoebaEaters.minByOrNull { (it.position - jelly.position).getDistance() }
-            val predatorAvoidance = if (nearestPredator != null) {
-                val away = jelly.position - nearestPredator.position
-                val distance = away.getDistance().coerceAtLeast(0.001f)
-                val threat = ((jellyAvoidRange - distance) / jellyAvoidRange).coerceIn(0f, 1f)
-                away / distance * (speed * threat * 1.2f)
-            } else {
-                Offset.Zero
+            var nearestDx = 0f
+            var nearestDy = 0f
+            var nearestDistanceSq = Float.MAX_VALUE
+            for (i in amoebaEaters.indices) {
+                val predatorPos = amoebaEaters[i].position
+                val dx = jelly.position.x - predatorPos.x
+                val dy = jelly.position.y - predatorPos.y
+                val distanceSq = dx * dx + dy * dy
+                if (distanceSq < nearestDistanceSq) {
+                    nearestDistanceSq = distanceSq
+                    nearestDx = dx
+                    nearestDy = dy
+                }
             }
+            val predatorAvoidance = if (nearestDistanceSq < jellyAvoidRangeSq) {
+                val distance = sqrt(nearestDistanceSq).coerceAtLeast(0.001f)
+                val threat = (1f - nearestDistanceSq / jellyAvoidRangeSq).coerceIn(0f, 1f)
+                Offset(nearestDx / distance, nearestDy / distance) * (speed * threat * 1.05f)
+            } else Offset.Zero
             val moved = moveWithSliding(
                 current = jelly.position,
                 velocity = jelly.driftVelocity + wobble + predatorAvoidance,
@@ -447,11 +458,6 @@ fun AmoebaGame() {
             } else {
                 jelly.copy(
                     position = moved,
-                    driftVelocity = if (predatorAvoidance == Offset.Zero) {
-                        jelly.driftVelocity
-                    } else {
-                        (jelly.driftVelocity * 0.9f + predatorAvoidance * 0.1f)
-                    },
                     driftPhase = (jelly.driftPhase + 0.0025f) % 1f
                 )
             }
