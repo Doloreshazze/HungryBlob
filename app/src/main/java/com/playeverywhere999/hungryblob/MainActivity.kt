@@ -679,6 +679,7 @@ fun AmoebaGame() {
         val eatenBotIds = mutableSetOf<Int>()
         var parasiteDrain = 0
         var playerControlPenalty = 0f
+        var stingerPlayerBites = 0
         val predatorVisionRange = (blobRadius * 1.05f) * 10f
         amoebaEaters = amoebaEaters.map { eater ->
             val isFleeing = eater.type == PredatorType.STINGER &&
@@ -757,16 +758,10 @@ fun AmoebaGame() {
             val attach = eater.type == PredatorType.PARASITE && nearPlayer && alive
             val attached = eater.attachedToPlayer || attach
             val nextAttachTimer = if (attached) (eater.attachTimer + 0.02f).coerceAtMost(4f) else 0f
-            val stingerCaughtBot = eater.type == PredatorType.STINGER &&
-                visibleBots.any { (it.position - reactedPosition).getDistance() < blobRadius * 1.35f }
             val stingerCaughtPlayer = eater.type == PredatorType.STINGER && alive &&
                 (blobPos - reactedPosition).getDistance() < blobRadius * 1.35f
-            val stingerFleeTriggered = stingerCaughtBot || stingerCaughtPlayer
-            val stingerVictimPos = when {
-                stingerCaughtPlayer -> blobPos
-                stingerCaughtBot -> visibleBots.minByOrNull { (it.position - reactedPosition).getDistance() }?.position ?: reactedPosition
-                else -> null
-            }
+            val stingerFleeTriggered = stingerCaughtPlayer
+            val stingerVictimPos = if (stingerCaughtPlayer) blobPos else null
             val stingerRetreat = if (stingerVictimPos != null) {
                 (reactedPosition - stingerVictimPos).normalized().let { if (it.getDistance() > 0.001f) it else Offset(1f, 0f) }
             } else eater.retreatDirection
@@ -783,6 +778,10 @@ fun AmoebaGame() {
             if (attached) {
                 parasiteDrain += 1
                 playerControlPenalty = 0.35f
+            }
+            val stingerBiteTriggered = eater.type == PredatorType.STINGER && !isFleeing && stingerFleeTriggered
+            if (stingerBiteTriggered && stingerCaughtPlayer) {
+                stingerPlayerBites += 1
             }
             val nextShockTimer = if (zappedByJelly) 1f else (eater.shockTimer - 0.03f).coerceAtLeast(0f)
             eater.copy(
@@ -802,11 +801,15 @@ fun AmoebaGame() {
             if (moveTarget != null) moveTarget = blobPos + (moveTarget!! - blobPos) * (1f - playerControlPenalty)
         }
         amoebaEaters.forEach { eater ->
+            if (eater.type != PredatorType.EVIL_AMOEBA) return@forEach
             bots.filter { (it.position - eater.position).getDistance() < blobRadius * 1.5f }
                 .forEach { eatenBotIds += it.id }
         }
         if (eatenBotIds.isNotEmpty()) {
             bots = bots.filterNot { it.id in eatenBotIds }
+        }
+        if (stingerPlayerBites > 0) {
+            playerFoodCount = (playerFoodCount - stingerPlayerBites).coerceAtLeast(0)
         }
         val hitByEvil = amoebaEaters.any {
             it.type == PredatorType.EVIL_AMOEBA && (it.position - blobPos).getDistance() < blobRadius * 1.45f && alive
