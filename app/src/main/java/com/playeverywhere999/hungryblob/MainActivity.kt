@@ -420,12 +420,21 @@ fun AmoebaGame() {
                 val angle = Random.nextFloat() * 2f * PI.toFloat()
                 AmoebaEater(
                     id = idx,
-                    position = randomFoodPosition(
+                    // TODO: Удалить перед релизом: для тестирования спавним хищников рядом с игроком.
+                    position = randomPositionNearBlob(
+                        blobPos = blobPos,
                         worldSize = worldSize,
                         padding = blobRadius * 1.2f,
-                        blobPos = blobPos,
-                        minDistanceFromBlob = blobRadius * 4f,
-                        obstacles = obstacles
+                        minDistanceFromBlob = blobRadius * 2f,
+                        maxDistanceFromBlob = blobRadius * 6f,
+                        obstacles = obstacles,
+                        fallback = randomFoodPosition(
+                            worldSize = worldSize,
+                            padding = blobRadius * 1.2f,
+                            blobPos = blobPos,
+                            minDistanceFromBlob = blobRadius * 4f,
+                            obstacles = obstacles
+                        )
                     ),
                     heading = Offset(cos(angle), sin(angle)),
                     type = PredatorType.entries[idx % PredatorType.entries.size]
@@ -1355,6 +1364,29 @@ private fun randomFoodPosition(
     }
 
     return Offset(worldSize.width * 0.5f, worldSize.height * 0.5f)
+}
+
+private fun randomPositionNearBlob(
+    blobPos: Offset,
+    worldSize: Size,
+    padding: Float,
+    minDistanceFromBlob: Float,
+    maxDistanceFromBlob: Float,
+    obstacles: List<ObstacleRect>,
+    fallback: Offset
+): Offset {
+    repeat(80) {
+        val angle = Random.nextFloat() * 2f * PI.toFloat()
+        val distance = Random.nextFloat() * (maxDistanceFromBlob - minDistanceFromBlob) + minDistanceFromBlob
+        val candidate = Offset(
+            x = (blobPos.x + cos(angle) * distance).toFloat().coerceIn(padding, worldSize.width - padding),
+            y = (blobPos.y + sin(angle) * distance).toFloat().coerceIn(padding, worldSize.height - padding)
+        )
+        if (!collidesWithObstacles(candidate, padding, obstacles) && !isInEnclosedArea(candidate, worldSize, obstacles)) {
+            return candidate
+        }
+    }
+    return fallback
 }
 
 private fun isInEnclosedArea(position: Offset, worldSize: Size, obstacles: List<ObstacleRect>): Boolean {
