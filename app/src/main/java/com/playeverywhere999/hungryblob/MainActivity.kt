@@ -568,20 +568,24 @@ fun AmoebaGame() {
             }
             val predatorAvoidRange = botRadius * BOT_PREDATOR_AVOID_RANGE_FACTOR
             val predatorAvoidRangeSq = predatorAvoidRange * predatorAvoidRange
-            val nearestPredatorDelta = amoebaEaters
-                .asSequence()
-                .map { bot.position - it.position }
-                .map { delta -> delta to (delta.x * delta.x + delta.y * delta.y) }
-                .filter { it.second in 0.000001f..predatorAvoidRangeSq }
-                .minByOrNull { it.second }
-                ?.first
-            val predatorAvoidForce = if (nearestPredatorDelta != null) {
-                val distance = sqrt(nearestPredatorDelta.x * nearestPredatorDelta.x + nearestPredatorDelta.y * nearestPredatorDelta.y)
-                val strength = ((predatorAvoidRange - distance) / predatorAvoidRange) * BOT_PREDATOR_AVOID_STRENGTH
-                (nearestPredatorDelta / distance) * strength
-            } else {
-                Offset.Zero
+            var nearestDx = 0f
+            var nearestDy = 0f
+            var nearestDistSq = Float.MAX_VALUE
+            for (predator in amoebaEaters) {
+                val dx = bot.position.x - predator.position.x
+                val dy = bot.position.y - predator.position.y
+                val distSq = dx * dx + dy * dy
+                if (distSq in 0.000001f..predatorAvoidRangeSq && distSq < nearestDistSq) {
+                    nearestDistSq = distSq
+                    nearestDx = dx
+                    nearestDy = dy
+                }
             }
+            val predatorAvoidForce = if (nearestDistSq != Float.MAX_VALUE) {
+                val distance = sqrt(nearestDistSq)
+                val strength = ((predatorAvoidRange - distance) / predatorAvoidRange) * BOT_PREDATOR_AVOID_STRENGTH
+                Offset(nearestDx / distance, nearestDy / distance) * strength
+            } else Offset.Zero
             val botDirection = (chaseDirection + repelForce + predatorAvoidForce).normalized().let {
                 if (it.getDistance() > 0.001f) it else chaseDirection
             }
