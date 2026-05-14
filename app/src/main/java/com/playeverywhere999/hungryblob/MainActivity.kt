@@ -552,35 +552,57 @@ fun AmoebaGame() {
 
         val botVisionRange = botRadius * 8f
         val botVisionRangeSq = botVisionRange * botVisionRange
+        val botFearRange = botRadius * 3.8f
+        val botFearRangeSq = botFearRange * botFearRange
         bots = bots.map { bot ->
-            var nearestVisible: FoodParticle? = null
-            var nearestVisibleDistSq = Float.MAX_VALUE
-            var nearestVisibleNonCorner: FoodParticle? = null
-            var nearestVisibleNonCornerDistSq = Float.MAX_VALUE
-            for (i in foods.indices) {
-                val food = foods[i]
-                val dx = food.position.x - bot.position.x
-                val dy = food.position.y - bot.position.y
+            var nearestPredatorDx = 0f
+            var nearestPredatorDy = 0f
+            var nearestPredatorDistSq = Float.MAX_VALUE
+            for (i in amoebaEaters.indices) {
+                val predatorPos = amoebaEaters[i].position
+                val dx = bot.position.x - predatorPos.x
+                val dy = bot.position.y - predatorPos.y
                 val distSq = dx * dx + dy * dy
-                if (distSq > botVisionRangeSq) continue
-                if (!hasLineOfSight(bot.position, food.position, obstacles)) continue
-                if (distSq < nearestVisibleDistSq) {
-                    nearestVisibleDistSq = distSq
-                    nearestVisible = food
-                }
-                if (!isFoodInWorldCorner(food.position, foodRadius, worldSize, blobRadius) && distSq < nearestVisibleNonCornerDistSq) {
-                    nearestVisibleNonCornerDistSq = distSq
-                    nearestVisibleNonCorner = food
+                if (distSq < nearestPredatorDistSq) {
+                    nearestPredatorDistSq = distSq
+                    nearestPredatorDx = dx
+                    nearestPredatorDy = dy
                 }
             }
-            val nearest = nearestVisibleNonCorner ?: nearestVisible
-            val chaseDirection = if (nearest != null) {
-                val toFood = nearest.position - bot.position
-                val dist = toFood.getDistance()
-                if (dist > 0.001f) toFood / dist else bot.heading
+
+            val chaseDirection = if (nearestPredatorDistSq < botFearRangeSq) {
+                val predatorDistance = sqrt(nearestPredatorDistSq).coerceAtLeast(0.001f)
+                Offset(nearestPredatorDx / predatorDistance, nearestPredatorDy / predatorDistance)
             } else {
-                val wanderAngle = Random.nextFloat() * 2f * PI.toFloat()
-                Offset(cos(wanderAngle), sin(wanderAngle))
+                var nearestVisible: FoodParticle? = null
+                var nearestVisibleDistSq = Float.MAX_VALUE
+                var nearestVisibleNonCorner: FoodParticle? = null
+                var nearestVisibleNonCornerDistSq = Float.MAX_VALUE
+                for (i in foods.indices) {
+                    val food = foods[i]
+                    val dx = food.position.x - bot.position.x
+                    val dy = food.position.y - bot.position.y
+                    val distSq = dx * dx + dy * dy
+                    if (distSq > botVisionRangeSq) continue
+                    if (!hasLineOfSight(bot.position, food.position, obstacles)) continue
+                    if (distSq < nearestVisibleDistSq) {
+                        nearestVisibleDistSq = distSq
+                        nearestVisible = food
+                    }
+                    if (!isFoodInWorldCorner(food.position, foodRadius, worldSize, blobRadius) && distSq < nearestVisibleNonCornerDistSq) {
+                        nearestVisibleNonCornerDistSq = distSq
+                        nearestVisibleNonCorner = food
+                    }
+                }
+                val nearest = nearestVisibleNonCorner ?: nearestVisible
+                if (nearest != null) {
+                    val toFood = nearest.position - bot.position
+                    val dist = toFood.getDistance()
+                    if (dist > 0.001f) toFood / dist else bot.heading
+                } else {
+                    val wanderAngle = Random.nextFloat() * 2f * PI.toFloat()
+                    Offset(cos(wanderAngle), sin(wanderAngle))
+                }
             }
             val repelRange = botRadius * BOT_SOFT_REPEL_RANGE_FACTOR
             val repelForce = bots.fold(Offset.Zero) { acc, other ->
