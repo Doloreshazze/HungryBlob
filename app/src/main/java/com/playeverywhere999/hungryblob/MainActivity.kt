@@ -567,13 +567,20 @@ fun AmoebaGame() {
                 }
             }
             val predatorAvoidRange = botRadius * BOT_PREDATOR_AVOID_RANGE_FACTOR
-            val predatorAvoidForce = amoebaEaters.fold(Offset.Zero) { acc, predator ->
-                val delta = bot.position - predator.position
-                val distance = delta.getDistance()
-                if (distance > 0.001f && distance < predatorAvoidRange && hasLineOfSight(bot.position, predator.position, obstacles)) {
-                    val strength = ((predatorAvoidRange - distance) / predatorAvoidRange) * BOT_PREDATOR_AVOID_STRENGTH
-                    acc + (delta / distance) * strength
-                } else acc
+            val predatorAvoidRangeSq = predatorAvoidRange * predatorAvoidRange
+            val nearestPredatorDelta = amoebaEaters
+                .asSequence()
+                .map { bot.position - it.position }
+                .map { delta -> delta to (delta.x * delta.x + delta.y * delta.y) }
+                .filter { it.second in 0.000001f..predatorAvoidRangeSq }
+                .minByOrNull { it.second }
+                ?.first
+            val predatorAvoidForce = if (nearestPredatorDelta != null) {
+                val distance = sqrt(nearestPredatorDelta.x * nearestPredatorDelta.x + nearestPredatorDelta.y * nearestPredatorDelta.y)
+                val strength = ((predatorAvoidRange - distance) / predatorAvoidRange) * BOT_PREDATOR_AVOID_STRENGTH
+                (nearestPredatorDelta / distance) * strength
+            } else {
+                Offset.Zero
             }
             val botDirection = (chaseDirection + repelForce + predatorAvoidForce).normalized().let {
                 if (it.getDistance() > 0.001f) it else chaseDirection
