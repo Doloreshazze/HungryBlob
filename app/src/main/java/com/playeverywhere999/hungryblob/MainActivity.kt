@@ -177,7 +177,7 @@ fun AmoebaGame() {
     var botPortalStates by remember { mutableStateOf<Map<Int, Boolean>>(emptyMap()) }
     var jellyPortalStates by remember { mutableStateOf<Map<Int, Boolean>>(emptyMap()) }
     var eaterPortalStates by remember { mutableStateOf<Map<Int, Boolean>>(emptyMap()) }
-    var botAiTick by remember { mutableStateOf(0) }
+    val botAiTickRef = remember { intArrayOf(0) }
     val botAvoidCache = remember { mutableMapOf<Int, Offset>() }
 
     DisposableEffect(lifecycleOwner, blobPos, foods, vacuoleProgress, consumedFoodId, moveHeading, nextFoodId) {
@@ -228,7 +228,7 @@ fun AmoebaGame() {
                 )
             }
     ) {
-        botAiTick = (botAiTick + 1) % 1_000_000
+        botAiTickRef[0] = (botAiTickRef[0] + 1) % 1_000_000
         val speed = with(density) { 2.5f }
         val viewportSize = size
         val worldSize = Size(viewportSize.width * 10f, viewportSize.height * 4f)
@@ -569,7 +569,7 @@ fun AmoebaGame() {
                     } else acc
                 }
             }
-            val shouldRunPredatorAvoidance = (botAiTick + bot.id) % 6 == 0
+            val shouldRunPredatorAvoidance = (botAiTickRef[0] + bot.id) % 6 == 0
             val predatorAvoidForce = if (shouldRunPredatorAvoidance && amoebaEaters.isNotEmpty()) {
                 val predatorAvoidRange = botRadius * BOT_PREDATOR_AVOID_RANGE_FACTOR
                 val predatorAvoidRangeSq = predatorAvoidRange * predatorAvoidRange
