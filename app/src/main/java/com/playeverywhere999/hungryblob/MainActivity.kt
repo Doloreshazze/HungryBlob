@@ -58,7 +58,8 @@ private data class BotAmoeba(
     val consumedFoodId: Long? = null,
     val vacuoleProgress: Float = 0f,
     val shockTimer: Float = 0f,
-    val foodCount: Int = 0
+    val foodCount: Int = 0,
+    val predatorAvoidForce: Offset = Offset.Zero
 )
 
 private data class PoisonJellyfish(
@@ -178,7 +179,6 @@ fun AmoebaGame() {
     var jellyPortalStates by remember { mutableStateOf<Map<Int, Boolean>>(emptyMap()) }
     var eaterPortalStates by remember { mutableStateOf<Map<Int, Boolean>>(emptyMap()) }
     val botAiTickRef = remember { intArrayOf(0) }
-    val botAvoidCache = remember { mutableMapOf<Int, Offset>() }
 
     DisposableEffect(lifecycleOwner, blobPos, foods, vacuoleProgress, consumedFoodId, moveHeading, nextFoodId) {
         val observer = object : DefaultLifecycleObserver {
@@ -591,12 +591,7 @@ fun AmoebaGame() {
                     val strength = ((predatorAvoidRange - distance) / predatorAvoidRange) * BOT_PREDATOR_AVOID_STRENGTH
                     Offset(nearestDx / distance, nearestDy / distance) * strength
                 } else Offset.Zero
-            } else {
-                botAvoidCache[bot.id] ?: Offset.Zero
-            }
-            if (shouldRunPredatorAvoidance) {
-                botAvoidCache[bot.id] = predatorAvoidForce
-            }
+            } else bot.predatorAvoidForce
             val botDirection = (chaseDirection + repelForce + predatorAvoidForce).normalized().let {
                 if (it.getDistance() > 0.001f) it else chaseDirection
             }
@@ -621,9 +616,9 @@ fun AmoebaGame() {
                     worldSize = worldSize,
                     padding = botRadius
                 )
-                bot.copy(position = escaped, heading = escapeHeading, color = bot.color)
+                bot.copy(position = escaped, heading = escapeHeading, color = bot.color, predatorAvoidForce = predatorAvoidForce)
             } else {
-                bot.copy(position = moved, heading = botDirection, color = bot.color)
+                bot.copy(position = moved, heading = botDirection, color = bot.color, predatorAvoidForce = predatorAvoidForce)
             }
         }.map { bot ->
             val zapped = jellyfish.any { (it.position - bot.position).getDistance() < botRadius + jellyRadius * 0.62f }
@@ -641,9 +636,6 @@ fun AmoebaGame() {
                 bot.copy(position = pushed, shockTimer = newShock)
             } else bot.copy(shockTimer = newShock)
         }
-        val activeBotIds = bots.map { it.id }.toSet()
-        botAvoidCache.keys.retainAll(activeBotIds)
-
         val foodsToRemoveByBots = mutableSetOf<Long>()
         bots = bots.map { bot ->
             val nearest = foods.minByOrNull { (it.position - bot.position).getDistance() }
