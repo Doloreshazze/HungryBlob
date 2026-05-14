@@ -99,6 +99,8 @@ private const val AMOEBA_EATER_COUNT = 4
 private const val PORTAL_COUNT = 10
 private const val BOT_SOFT_REPEL_RANGE_FACTOR = 1.85f
 private const val BOT_SOFT_REPEL_STRENGTH = 0.14f
+private const val BOT_PREDATOR_AVOID_RANGE_FACTOR = 6.4f
+private const val BOT_PREDATOR_AVOID_STRENGTH = 1.15f
 private const val FOOD_CAPTURE_RADIUS_FACTOR = 1.1f
 private const val GAME_PREFS = "hungry_blob_save"
 private const val GAME_STATE_KEY = "state_v2"
@@ -175,6 +177,7 @@ fun AmoebaGame() {
     var botPortalStates by remember { mutableStateOf<Map<Int, Boolean>>(emptyMap()) }
     var jellyPortalStates by remember { mutableStateOf<Map<Int, Boolean>>(emptyMap()) }
     var eaterPortalStates by remember { mutableStateOf<Map<Int, Boolean>>(emptyMap()) }
+    var botAiTick by remember { mutableStateOf(0) }
 
     DisposableEffect(lifecycleOwner, blobPos, foods, vacuoleProgress, consumedFoodId, moveHeading, nextFoodId) {
         val observer = object : DefaultLifecycleObserver {
@@ -224,6 +227,7 @@ fun AmoebaGame() {
                 )
             }
     ) {
+        botAiTick = (botAiTick + 1) % 1_000_000
         val speed = with(density) { 2.5f }
         val viewportSize = size
         val worldSize = Size(viewportSize.width * 10f, viewportSize.height * 4f)
@@ -564,7 +568,30 @@ fun AmoebaGame() {
                     } else acc
                 }
             }
-            val botDirection = (chaseDirection + repelForce).normalized().let {
+            val shouldRunPredatorAvoidance = (botAiTick + bot.id) % 3 == 0
+            val predatorAvoidForce = if (shouldRunPredatorAvoidance && amoebaEaters.isNotEmpty()) {
+                val predatorAvoidRange = botRadius * BOT_PREDATOR_AVOID_RANGE_FACTOR
+                val predatorAvoidRangeSq = predatorAvoidRange * predatorAvoidRange
+                var nearestDx = 0f
+                var nearestDy = 0f
+                var nearestDistSq = Float.MAX_VALUE
+                for (predator in amoebaEaters) {
+                    val dx = bot.position.x - predator.position.x
+                    val dy = bot.position.y - predator.position.y
+                    val distSq = dx * dx + dy * dy
+                    if (distSq in 0.000001f..predatorAvoidRangeSq && distSq < nearestDistSq) {
+                        nearestDistSq = distSq
+                        nearestDx = dx
+                        nearestDy = dy
+                    }
+                }
+                if (nearestDistSq != Float.MAX_VALUE) {
+                    val distance = sqrt(nearestDistSq)
+                    val strength = ((predatorAvoidRange - distance) / predatorAvoidRange) * BOT_PREDATOR_AVOID_STRENGTH
+                    Offset(nearestDx / distance, nearestDy / distance) * strength
+                } else Offset.Zero
+            } else Offset.Zero
+            val botDirection = (chaseDirection + repelForce + predatorAvoidForce).normalized().let {
                 if (it.getDistance() > 0.001f) it else chaseDirection
             }
             val botSpeed = speed * 0.88f
