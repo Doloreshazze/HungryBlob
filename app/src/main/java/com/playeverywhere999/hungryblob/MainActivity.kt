@@ -178,6 +178,7 @@ fun AmoebaGame() {
     var jellyPortalStates by remember { mutableStateOf<Map<Int, Boolean>>(emptyMap()) }
     var eaterPortalStates by remember { mutableStateOf<Map<Int, Boolean>>(emptyMap()) }
     var botAiTick by remember { mutableStateOf(0) }
+    var botAvoidCache by remember { mutableStateOf<Map<Int, Offset>>(emptyMap()) }
 
     DisposableEffect(lifecycleOwner, blobPos, foods, vacuoleProgress, consumedFoodId, moveHeading, nextFoodId) {
         val observer = object : DefaultLifecycleObserver {
@@ -533,6 +534,7 @@ fun AmoebaGame() {
         }
 
         val botVisionRange = botRadius * 8f
+        var nextBotAvoidCache = botAvoidCache
         bots = bots.map { bot ->
             val nearbyFoods = foods
                 .asSequence()
@@ -568,7 +570,7 @@ fun AmoebaGame() {
                     } else acc
                 }
             }
-            val shouldRunPredatorAvoidance = (botAiTick + bot.id) % 3 == 0
+            val shouldRunPredatorAvoidance = (botAiTick + bot.id) % 6 == 0
             val predatorAvoidForce = if (shouldRunPredatorAvoidance && amoebaEaters.isNotEmpty()) {
                 val predatorAvoidRange = botRadius * BOT_PREDATOR_AVOID_RANGE_FACTOR
                 val predatorAvoidRangeSq = predatorAvoidRange * predatorAvoidRange
@@ -590,7 +592,12 @@ fun AmoebaGame() {
                     val strength = ((predatorAvoidRange - distance) / predatorAvoidRange) * BOT_PREDATOR_AVOID_STRENGTH
                     Offset(nearestDx / distance, nearestDy / distance) * strength
                 } else Offset.Zero
-            } else Offset.Zero
+            } else {
+                botAvoidCache[bot.id] ?: Offset.Zero
+            }
+            if (shouldRunPredatorAvoidance) {
+                nextBotAvoidCache = nextBotAvoidCache + (bot.id to predatorAvoidForce)
+            }
             val botDirection = (chaseDirection + repelForce + predatorAvoidForce).normalized().let {
                 if (it.getDistance() > 0.001f) it else chaseDirection
             }
@@ -635,6 +642,7 @@ fun AmoebaGame() {
                 bot.copy(position = pushed, shockTimer = newShock)
             } else bot.copy(shockTimer = newShock)
         }
+        botAvoidCache = nextBotAvoidCache.filterKeys { id -> bots.any { it.id == id } }
 
         val foodsToRemoveByBots = mutableSetOf<Long>()
         bots = bots.map { bot ->
