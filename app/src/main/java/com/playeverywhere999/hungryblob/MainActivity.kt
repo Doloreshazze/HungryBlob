@@ -428,13 +428,15 @@ fun AmoebaGame() {
                         minDistanceFromBlob = blobRadius * 2f,
                         maxDistanceFromBlob = blobRadius * 6f,
                         obstacles = obstacles,
-                        fallback = randomFoodPosition(
+                        fallbackProvider = {
+                            randomFoodPosition(
                             worldSize = worldSize,
                             padding = blobRadius * 1.2f,
                             blobPos = blobPos,
                             minDistanceFromBlob = blobRadius * 4f,
                             obstacles = obstacles
                         )
+                        }
                     ),
                     heading = Offset(cos(angle), sin(angle)),
                     type = PredatorType.entries[idx % PredatorType.entries.size]
@@ -1373,7 +1375,7 @@ private fun randomPositionNearBlob(
     minDistanceFromBlob: Float,
     maxDistanceFromBlob: Float,
     obstacles: List<ObstacleRect>,
-    fallback: Offset
+    fallbackProvider: () -> Offset
 ): Offset {
     repeat(80) {
         val angle = Random.nextFloat() * 2f * PI.toFloat()
@@ -1386,7 +1388,7 @@ private fun randomPositionNearBlob(
             return candidate
         }
     }
-    return fallback
+    return fallbackProvider()
 }
 
 private fun isInEnclosedArea(position: Offset, worldSize: Size, obstacles: List<ObstacleRect>): Boolean {
