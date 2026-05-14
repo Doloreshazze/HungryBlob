@@ -419,9 +419,21 @@ fun AmoebaGame() {
         jellyfish = jellyfish.map { jelly ->
             val wobbleAngle = (morphProgress * 2f * PI.toFloat()) + jelly.driftPhase * 2f * PI.toFloat()
             val wobble = Offset(cos(wobbleAngle).toFloat(), sin(wobbleAngle * 1.3f).toFloat()) * (speed * 0.08f)
+            val nearestPredator = amoebaEaters.minByOrNull { (it.position - jelly.position).getDistance() }
+            val predatorAvoidance = nearestPredator?.let { predator ->
+                val offsetFromPredator = jelly.position - predator.position
+                val distance = offsetFromPredator.getDistance().coerceAtLeast(0.001f)
+                val dangerRange = blobRadius * 3.6f
+                val panic = ((dangerRange - distance) / dangerRange).coerceIn(0f, 1f)
+                if (panic > 0f) {
+                    offsetFromPredator / distance * (speed * (0.42f + panic * 0.88f))
+                } else {
+                    Offset.Zero
+                }
+            } ?: Offset.Zero
             val moved = moveWithSliding(
                 current = jelly.position,
-                velocity = jelly.driftVelocity + wobble,
+                velocity = jelly.driftVelocity + wobble + predatorAvoidance,
                 radius = jellyRadius,
                 obstacles = obstacles,
                 worldSize = worldSize,
@@ -436,7 +448,15 @@ fun AmoebaGame() {
                     driftPhase = (jelly.driftPhase + 0.1f) % 1f
                 )
             } else {
-                jelly.copy(position = moved, driftPhase = (jelly.driftPhase + 0.0025f) % 1f)
+                val drift = (jelly.driftVelocity * 0.9f) + (predatorAvoidance * 0.16f)
+                val cappedDrift = if (drift.getDistance() > speed * 0.34f) {
+                    drift.normalized() * (speed * 0.34f)
+                } else drift
+                jelly.copy(
+                    position = moved,
+                    driftVelocity = cappedDrift,
+                    driftPhase = (jelly.driftPhase + 0.0025f) % 1f
+                )
             }
         }
 
