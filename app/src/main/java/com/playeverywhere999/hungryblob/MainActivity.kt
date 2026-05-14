@@ -175,6 +175,9 @@ fun AmoebaGame() {
     var botPortalStates by remember { mutableStateOf<Map<Int, Boolean>>(emptyMap()) }
     var jellyPortalStates by remember { mutableStateOf<Map<Int, Boolean>>(emptyMap()) }
     var eaterPortalStates by remember { mutableStateOf<Map<Int, Boolean>>(emptyMap()) }
+    var cachedObstacleWorldSize by remember { mutableStateOf(Size.Zero) }
+    var cachedObstacleViewportSize by remember { mutableStateOf(Size.Zero) }
+    var cachedObstacles by remember { mutableStateOf(emptyList<ObstacleRect>()) }
 
     DisposableEffect(lifecycleOwner, blobPos, foods, vacuoleProgress, consumedFoodId, moveHeading, nextFoodId) {
         val observer = object : DefaultLifecycleObserver {
@@ -227,7 +230,19 @@ fun AmoebaGame() {
         val speed = with(density) { 2.5f }
         val viewportSize = size
         val worldSize = Size(viewportSize.width * 10f, viewportSize.height * 4f)
-        val obstacles = buildLetterObstacles(worldSize, viewportSize)
+        val obstacles = if (
+            cachedObstacles.isEmpty() ||
+            cachedObstacleWorldSize != worldSize ||
+            cachedObstacleViewportSize != viewportSize
+        ) {
+            val rebuilt = buildLetterObstacles(worldSize, viewportSize)
+            cachedObstacleWorldSize = worldSize
+            cachedObstacleViewportSize = viewportSize
+            cachedObstacles = rebuilt
+            rebuilt
+        } else {
+            cachedObstacles
+        }
         val blobRadius = min(viewportSize.width, viewportSize.height) * 0.09f
         val movementPadding = blobRadius * 0.5f
         val portalRadius = blobRadius * 0.85f
