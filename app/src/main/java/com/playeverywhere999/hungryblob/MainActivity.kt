@@ -14,7 +14,11 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -33,12 +37,15 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.compose.material3.Button
+import androidx.compose.material3.Text
 import com.playeverywhere999.hungryblob.ui.theme.HungryBlobTheme
 import kotlin.math.PI
 import kotlin.math.cos
@@ -177,6 +184,32 @@ fun AmoebaGame() {
     var botPortalStates by remember { mutableStateOf<Map<Int, Boolean>>(emptyMap()) }
     var jellyPortalStates by remember { mutableStateOf<Map<Int, Boolean>>(emptyMap()) }
     var eaterPortalStates by remember { mutableStateOf<Map<Int, Boolean>>(emptyMap()) }
+    var isMusicEnabled by remember { mutableStateOf(true) }
+
+    val resetGame: () -> Unit = {
+        blobPos = Offset(400f, 700f)
+        cameraTopLeft = Offset.Zero
+        foods = emptyList()
+        vacuoleProgress = 0f
+        consumedFoodId = null
+        moveTarget = null
+        moveHeading = Offset(1f, 0f)
+        nextFoodId = 1L
+        bots = emptyList()
+        jellyfish = emptyList()
+        shockTimer = 0f
+        playerColor = Color(0xFF83E7A0)
+        playerFoodCount = 0
+        splitEventTimer = 0f
+        nextSplitAt = 10
+        amoebaEaters = emptyList()
+        playerRespawnTimer = 0f
+        portals = emptyList()
+        playerInsidePortal = false
+        botPortalStates = emptyMap()
+        jellyPortalStates = emptyMap()
+        eaterPortalStates = emptyMap()
+    }
 
     DisposableEffect(lifecycleOwner, blobPos, foods, vacuoleProgress, consumedFoodId, moveHeading, nextFoodId) {
         val observer = object : DefaultLifecycleObserver {
@@ -200,32 +233,33 @@ fun AmoebaGame() {
         }
     }
 
-    Canvas(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color(0xFF071923))
-            .pointerInput(Unit) {
-                detectTapGestures { tap ->
-                    moveTarget = tap + cameraTopLeft
-                }
-            }
-            .pointerInput(Unit) {
-                detectDragGestures(
-                    onDragStart = { touch ->
-                        moveTarget = touch + cameraTopLeft
-                    },
-                    onDrag = { change, _ ->
-                        moveTarget = change.position + cameraTopLeft
-                    },
-                    onDragEnd = {
-                        moveTarget = null
-                    },
-                    onDragCancel = {
-                        moveTarget = null
+    Box(modifier = Modifier.fillMaxSize()) {
+        Canvas(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color(0xFF071923))
+                .pointerInput(Unit) {
+                    detectTapGestures { tap ->
+                        moveTarget = tap + cameraTopLeft
                     }
-                )
-            }
-    ) {
+                }
+                .pointerInput(Unit) {
+                    detectDragGestures(
+                        onDragStart = { touch ->
+                            moveTarget = touch + cameraTopLeft
+                        },
+                        onDrag = { change, _ ->
+                            moveTarget = change.position + cameraTopLeft
+                        },
+                        onDragEnd = {
+                            moveTarget = null
+                        },
+                        onDragCancel = {
+                            moveTarget = null
+                        }
+                    )
+                }
+        ) {
         val speed = with(density) { 2.5f }
         val viewportSize = size
         val worldSize = Size(viewportSize.width * 10f, viewportSize.height * 4f)
@@ -1015,6 +1049,23 @@ fun AmoebaGame() {
             morphProgress = morphProgress
         )
 
+        }
+
+        Row(
+            modifier = Modifier
+                .statusBarsPadding()
+                .padding(12.dp)
+        ) {
+            Button(onClick = { isMusicEnabled = !isMusicEnabled }) {
+                Text(if (isMusicEnabled) "Музыка: ВКЛ" else "Музыка: ВЫКЛ")
+            }
+            Button(
+                modifier = Modifier.padding(start = 8.dp),
+                onClick = resetGame
+            ) {
+                Text("Reset")
+            }
+        }
     }
 }
 
