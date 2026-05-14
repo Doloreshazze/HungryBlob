@@ -92,9 +92,9 @@ private data class GameSnapshot(
     val nextFoodId: Long
 )
 
-private const val FOOD_PARTICLE_COUNT = 260
-private const val BOT_AMOEBA_COUNT = 18
-private const val POISON_JELLYFISH_COUNT = 16
+private const val FOOD_PARTICLE_COUNT = 180
+private const val BOT_AMOEBA_COUNT = 12
+private const val POISON_JELLYFISH_COUNT = 12
 private const val AMOEBA_EATER_COUNT = 4
 private const val PORTAL_COUNT = 10
 private const val BOT_SOFT_REPEL_RANGE_FACTOR = 1.85f
@@ -586,7 +586,6 @@ fun AmoebaGame() {
                     val dy = food.position.y - bot.position.y
                     val distSq = dx * dx + dy * dy
                     if (distSq > botVisionRangeSq) continue
-                    if (!hasLineOfSight(bot.position, food.position, obstacles)) continue
                     if (distSq < nearestVisibleDistSq) {
                         nearestVisibleDistSq = distSq
                         nearestVisible = food
