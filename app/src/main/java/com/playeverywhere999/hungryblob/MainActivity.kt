@@ -178,7 +178,7 @@ fun AmoebaGame() {
     var jellyPortalStates by remember { mutableStateOf<Map<Int, Boolean>>(emptyMap()) }
     var eaterPortalStates by remember { mutableStateOf<Map<Int, Boolean>>(emptyMap()) }
     var botAiTick by remember { mutableStateOf(0) }
-    var botAvoidCache by remember { mutableStateOf<Map<Int, Offset>>(emptyMap()) }
+    val botAvoidCache = remember { mutableMapOf<Int, Offset>() }
 
     DisposableEffect(lifecycleOwner, blobPos, foods, vacuoleProgress, consumedFoodId, moveHeading, nextFoodId) {
         val observer = object : DefaultLifecycleObserver {
@@ -534,7 +534,6 @@ fun AmoebaGame() {
         }
 
         val botVisionRange = botRadius * 8f
-        var nextBotAvoidCache = botAvoidCache
         bots = bots.map { bot ->
             val nearbyFoods = foods
                 .asSequence()
@@ -596,7 +595,7 @@ fun AmoebaGame() {
                 botAvoidCache[bot.id] ?: Offset.Zero
             }
             if (shouldRunPredatorAvoidance) {
-                nextBotAvoidCache = nextBotAvoidCache + (bot.id to predatorAvoidForce)
+                botAvoidCache[bot.id] = predatorAvoidForce
             }
             val botDirection = (chaseDirection + repelForce + predatorAvoidForce).normalized().let {
                 if (it.getDistance() > 0.001f) it else chaseDirection
@@ -642,7 +641,8 @@ fun AmoebaGame() {
                 bot.copy(position = pushed, shockTimer = newShock)
             } else bot.copy(shockTimer = newShock)
         }
-        botAvoidCache = nextBotAvoidCache.filterKeys { id -> bots.any { it.id == id } }
+        val activeBotIds = bots.map { it.id }.toSet()
+        botAvoidCache.keys.retainAll(activeBotIds)
 
         val foodsToRemoveByBots = mutableSetOf<Long>()
         bots = bots.map { bot ->
