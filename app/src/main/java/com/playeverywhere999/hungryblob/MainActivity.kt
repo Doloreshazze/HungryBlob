@@ -99,6 +99,8 @@ private const val AMOEBA_EATER_COUNT = 4
 private const val PORTAL_COUNT = 10
 private const val BOT_SOFT_REPEL_RANGE_FACTOR = 1.85f
 private const val BOT_SOFT_REPEL_STRENGTH = 0.14f
+private const val BOT_PREDATOR_AVOID_RANGE_FACTOR = 6.4f
+private const val BOT_PREDATOR_AVOID_STRENGTH = 1.15f
 private const val FOOD_CAPTURE_RADIUS_FACTOR = 1.1f
 private const val GAME_PREFS = "hungry_blob_save"
 private const val GAME_STATE_KEY = "state_v2"
@@ -564,7 +566,16 @@ fun AmoebaGame() {
                     } else acc
                 }
             }
-            val botDirection = (chaseDirection + repelForce).normalized().let {
+            val predatorAvoidRange = botRadius * BOT_PREDATOR_AVOID_RANGE_FACTOR
+            val predatorAvoidForce = amoebaEaters.fold(Offset.Zero) { acc, predator ->
+                val delta = bot.position - predator.position
+                val distance = delta.getDistance()
+                if (distance > 0.001f && distance < predatorAvoidRange && hasLineOfSight(bot.position, predator.position, obstacles)) {
+                    val strength = ((predatorAvoidRange - distance) / predatorAvoidRange) * BOT_PREDATOR_AVOID_STRENGTH
+                    acc + (delta / distance) * strength
+                } else acc
+            }
+            val botDirection = (chaseDirection + repelForce + predatorAvoidForce).normalized().let {
                 if (it.getDistance() > 0.001f) it else chaseDirection
             }
             val botSpeed = speed * 0.88f
