@@ -93,7 +93,7 @@ private data class GameSnapshot(
 )
 
 private const val FOOD_PARTICLE_COUNT = 260
-private const val BOT_AMOEBA_COUNT = 30
+private const val BOT_AMOEBA_COUNT = 18
 private const val POISON_JELLYFISH_COUNT = 16
 private const val AMOEBA_EATER_COUNT = 4
 private const val PORTAL_COUNT = 10
@@ -554,7 +554,9 @@ fun AmoebaGame() {
         val botVisionRangeSq = botVisionRange * botVisionRange
         val botFearRange = botRadius * 3.8f
         val botFearRangeSq = botFearRange * botFearRange
-        bots = bots.map { bot ->
+        val shouldUpdateBots = ((morphProgress * 90f).toInt() and 1) == 0
+        if (shouldUpdateBots) {
+            bots = bots.map { bot ->
             var nearestPredatorDx = 0f
             var nearestPredatorDy = 0f
             var nearestPredatorDistSq = Float.MAX_VALUE
@@ -660,6 +662,13 @@ fun AmoebaGame() {
                 )
                 bot.copy(position = pushed, shockTimer = newShock)
             } else bot.copy(shockTimer = newShock)
+        }
+        } else {
+            bots = bots.map { bot ->
+                val zapped = jellyfish.any { (it.position - bot.position).getDistance() < botRadius + jellyRadius * 0.62f }
+                val newShock = if (zapped) 1f else (bot.shockTimer - 0.03f).coerceAtLeast(0f)
+                bot.copy(shockTimer = newShock)
+            }
         }
 
         val foodsToRemoveByBots = mutableSetOf<Long>()
