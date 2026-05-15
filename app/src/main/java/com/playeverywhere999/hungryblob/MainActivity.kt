@@ -417,7 +417,7 @@ fun AmoebaGame() {
 
         if (amoebaEaters.isEmpty()) {
             amoebaEaters = List(AMOEBA_EATER_COUNT) { idx ->
-                val angle = Random.nextFloat() * 2f * PI.toFloat()
+                val angle = (idx.toFloat() / AMOEBA_EATER_COUNT.toFloat()) * 2f * PI.toFloat()
                 AmoebaEater(
                     id = idx,
                     // TODO: Удалить перед релизом: для тестирования спавним хищников рядом с игроком.
@@ -425,17 +425,17 @@ fun AmoebaGame() {
                         blobPos = blobPos,
                         worldSize = worldSize,
                         padding = blobRadius * 1.2f,
-                        minDistanceFromBlob = blobRadius * 2f,
-                        maxDistanceFromBlob = blobRadius * 6f,
+                        distanceFromBlob = blobRadius * 3.5f,
+                        angle = angle,
                         obstacles = obstacles,
                         fallbackProvider = {
                             randomFoodPosition(
-                            worldSize = worldSize,
-                            padding = blobRadius * 1.2f,
-                            blobPos = blobPos,
-                            minDistanceFromBlob = blobRadius * 4f,
-                            obstacles = obstacles
-                        )
+                                worldSize = worldSize,
+                                padding = blobRadius * 1.2f,
+                                blobPos = blobPos,
+                                minDistanceFromBlob = blobRadius * 4f,
+                                obstacles = obstacles
+                            )
                         }
                     ),
                     heading = Offset(cos(angle), sin(angle)),
@@ -1372,22 +1372,16 @@ private fun randomPositionNearBlob(
     blobPos: Offset,
     worldSize: Size,
     padding: Float,
-    minDistanceFromBlob: Float,
-    maxDistanceFromBlob: Float,
+    distanceFromBlob: Float,
+    angle: Float,
     obstacles: List<ObstacleRect>,
     fallbackProvider: () -> Offset
 ): Offset {
-    repeat(80) {
-        val angle = Random.nextFloat() * 2f * PI.toFloat()
-        val distance = Random.nextFloat() * (maxDistanceFromBlob - minDistanceFromBlob) + minDistanceFromBlob
-        val candidate = Offset(
-            x = (blobPos.x + cos(angle) * distance).toFloat().coerceIn(padding, worldSize.width - padding),
-            y = (blobPos.y + sin(angle) * distance).toFloat().coerceIn(padding, worldSize.height - padding)
-        )
-        if (!collidesWithObstacles(candidate, padding, obstacles) && !isInEnclosedArea(candidate, worldSize, obstacles)) {
-            return candidate
-        }
-    }
+    val candidate = Offset(
+        x = (blobPos.x + cos(angle) * distanceFromBlob).toFloat().coerceIn(padding, worldSize.width - padding),
+        y = (blobPos.y + sin(angle) * distanceFromBlob).toFloat().coerceIn(padding, worldSize.height - padding)
+    )
+    if (!collidesWithObstacles(candidate, padding, obstacles)) return candidate
     return fallbackProvider()
 }
 
