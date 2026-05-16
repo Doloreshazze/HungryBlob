@@ -187,6 +187,7 @@ fun AmoebaGame() {
     var jellyPortalStates by remember { mutableStateOf<Map<Int, Boolean>>(emptyMap()) }
     var eaterPortalStates by remember { mutableStateOf<Map<Int, Boolean>>(emptyMap()) }
     var isMusicEnabled by remember { mutableStateOf(true) }
+    var updateFoodThisFrame by remember { mutableStateOf(true) }
 
     val resetGame: () -> Unit = {
         blobPos = Offset(400f, 700f)
@@ -492,7 +493,10 @@ fun AmoebaGame() {
         shockTimer = if (hitJelly) 1f else (shockTimer - 0.03f).coerceAtLeast(0f)
 
         val foodBaseSpeed = speed * 0.9f
-        foods = foods.map { food ->
+        val shouldUpdateFood = !IS_PREDATOR_TEST_SPAWN_ENABLED || updateFoodThisFrame
+        if (IS_PREDATOR_TEST_SPAWN_ENABLED) updateFoodThisFrame = !updateFoodThisFrame
+        if (shouldUpdateFood) {
+            foods = foods.map { food ->
             val botThreat = bots.minByOrNull { (food.position - it.position).getDistance() }?.position
             val playerDistance = (food.position - blobPos).getDistance()
             val botDistance = botThreat?.let { (food.position - it).getDistance() } ?: Float.MAX_VALUE
@@ -573,7 +577,8 @@ fun AmoebaGame() {
                 worldSize = worldSize,
                 blobRadius = blobRadius
             )
-            FoodParticle(id = food.id, position = escapedCorner.first, velocity = escapedCorner.second, color = food.color)
+                FoodParticle(id = food.id, position = escapedCorner.first, velocity = escapedCorner.second, color = food.color)
+            }
         }
 
         val botVisionRange = botRadius * 8f
