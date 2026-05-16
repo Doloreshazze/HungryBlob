@@ -429,19 +429,30 @@ fun AmoebaGame() {
         if (amoebaEaters.isEmpty()) {
             val spawnDistance = blobRadius * 3.5f
             val spawnPadding = blobRadius * 1.2f
+            val eaterRadius = blobRadius * 1.05f
             val nearSpawnCenter = Offset(
                 x = blobPos.x.coerceIn(spawnPadding + spawnDistance, worldSize.width - spawnPadding - spawnDistance),
                 y = blobPos.y.coerceIn(spawnPadding + spawnDistance, worldSize.height - spawnPadding - spawnDistance)
             )
             amoebaEaters = List(AMOEBA_EATER_COUNT) { idx ->
                 val angle = (idx.toFloat() / AMOEBA_EATER_COUNT.toFloat()) * 2f * PI.toFloat()
+                val preferredSpawn = Offset(
+                    x = nearSpawnCenter.x + cos(angle).toFloat() * spawnDistance,
+                    y = nearSpawnCenter.y + sin(angle).toFloat() * spawnDistance
+                )
+                val safeSpawn = if (collidesWithObstacles(preferredSpawn, eaterRadius, obstacles)) {
+                    randomFoodPosition(
+                        worldSize = worldSize,
+                        padding = eaterRadius,
+                        blobPos = blobPos,
+                        minDistanceFromBlob = blobRadius * 2.4f,
+                        obstacles = obstacles
+                    )
+                } else preferredSpawn
                 AmoebaEater(
                     id = idx,
                     // TODO: Удалить перед релизом: для тестирования спавним хищников рядом с игроком.
-                    position = Offset(
-                        x = nearSpawnCenter.x + cos(angle).toFloat() * spawnDistance,
-                        y = nearSpawnCenter.y + sin(angle).toFloat() * spawnDistance
-                    ),
+                    position = safeSpawn,
                     heading = Offset(cos(angle), sin(angle)),
                     type = PredatorType.entries[idx % PredatorType.entries.size]
                 )
