@@ -1084,6 +1084,12 @@ fun AmoebaGame() {
             progress = progress,
             morphProgress = morphProgress
         )
+        drawBotCountGauge(
+            topLeft = Offset(16f, 78f),
+            size = Size(150f, 22f),
+            botCount = bots.size,
+            maxBotCount = BOT_AMOEBA_COUNT
+        )
 
         }
 
@@ -1111,6 +1117,27 @@ fun AmoebaGame() {
             }
         }
     }
+}
+
+private fun DrawScope.drawBotCountGauge(
+    topLeft: Offset,
+    size: Size,
+    botCount: Int,
+    maxBotCount: Int
+) {
+    val clampedProgress = (botCount.toFloat() / max(1, maxBotCount).toFloat()).coerceIn(0f, 1f)
+    drawRoundRect(
+        color = Color(0x66365566),
+        topLeft = topLeft,
+        size = size,
+        cornerRadius = androidx.compose.ui.geometry.CornerRadius(11f, 11f)
+    )
+    drawRoundRect(
+        color = Color(0xFFB68CFF),
+        topLeft = Offset(topLeft.x + 2f, topLeft.y + 2f),
+        size = Size((size.width - 4f) * clampedProgress, size.height - 4f),
+        cornerRadius = androidx.compose.ui.geometry.CornerRadius(9f, 9f)
+    )
 }
 
 
