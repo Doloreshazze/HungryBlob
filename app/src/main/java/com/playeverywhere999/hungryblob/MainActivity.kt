@@ -637,28 +637,37 @@ fun AmoebaGame() {
                     } else acc
                 }
             }
-            val predatorAvoidRange = botRadius * BOT_PREDATOR_AVOID_RANGE_FACTOR
-            val predatorAvoidRangeSq = predatorAvoidRange * predatorAvoidRange
-            var nearestPredatorDistanceSq = Float.MAX_VALUE
+            val botScreenPos = bot.position - cameraTopLeft
+            val isBotVisibleToPlayer =
+                botScreenPos.x >= -botRadius &&
+                    botScreenPos.x <= viewportSize.width + botRadius &&
+                    botScreenPos.y >= -botRadius &&
+                    botScreenPos.y <= viewportSize.height + botRadius
+            var predatorThreat = 0f
             var predatorAvoidForce = Offset.Zero
-            var sampledPredators = 0
-            for (predator in amoebaEaters) {
-                val dx = bot.position.x - predator.position.x
-                val dy = bot.position.y - predator.position.y
-                val distSq = dx * dx + dy * dy
-                if (distSq > 0.000001f && distSq < predatorAvoidRangeSq) {
-                    nearestPredatorDistanceSq = min(nearestPredatorDistanceSq, distSq)
-                    val invDistance = 1f / sqrt(distSq)
-                    val threat = (1f - distSq / predatorAvoidRangeSq).coerceIn(0f, 1f)
-                    predatorAvoidForce += Offset(dx * invDistance, dy * invDistance) * (threat * BOT_PREDATOR_AVOID_STRENGTH)
-                    sampledPredators++
-                    if (sampledPredators >= BOT_PREDATOR_MAX_SAMPLES) break
+            if (isBotVisibleToPlayer) {
+                val predatorAvoidRange = botRadius * BOT_PREDATOR_AVOID_RANGE_FACTOR
+                val predatorAvoidRangeSq = predatorAvoidRange * predatorAvoidRange
+                var nearestPredatorDistanceSq = Float.MAX_VALUE
+                var sampledPredators = 0
+                for (predator in amoebaEaters) {
+                    val dx = bot.position.x - predator.position.x
+                    val dy = bot.position.y - predator.position.y
+                    val distSq = dx * dx + dy * dy
+                    if (distSq > 0.000001f && distSq < predatorAvoidRangeSq) {
+                        nearestPredatorDistanceSq = min(nearestPredatorDistanceSq, distSq)
+                        val invDistance = 1f / sqrt(distSq)
+                        val threat = (1f - distSq / predatorAvoidRangeSq).coerceIn(0f, 1f)
+                        predatorAvoidForce += Offset(dx * invDistance, dy * invDistance) * (threat * BOT_PREDATOR_AVOID_STRENGTH)
+                        sampledPredators++
+                        if (sampledPredators >= BOT_PREDATOR_MAX_SAMPLES) break
+                    }
                 }
-            }
-            val predatorThreat = if (nearestPredatorDistanceSq == Float.MAX_VALUE) {
-                0f
-            } else {
-                (1f - nearestPredatorDistanceSq / predatorAvoidRangeSq).coerceIn(0f, 1f)
+                predatorThreat = if (nearestPredatorDistanceSq == Float.MAX_VALUE) {
+                    0f
+                } else {
+                    (1f - nearestPredatorDistanceSq / predatorAvoidRangeSq).coerceIn(0f, 1f)
+                }
             }
             val foodFocus = (1f - predatorThreat * 0.65f).coerceIn(0.35f, 1f)
             val steering = (chaseDirection * foodFocus) + repelForce + predatorAvoidForce
