@@ -45,6 +45,7 @@ import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Text
 import com.playeverywhere999.hungryblob.ui.theme.HungryBlobTheme
 import kotlin.math.PI
@@ -1091,14 +1092,22 @@ fun AmoebaGame() {
                 .statusBarsPadding()
                 .padding(12.dp)
         ) {
-            Button(onClick = { isMusicEnabled = !isMusicEnabled }) {
-                Text(if (isMusicEnabled) "Музыка: ВКЛ" else "Музыка: ВЫКЛ")
+            Button(
+                onClick = { isMusicEnabled = !isMusicEnabled },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color.White.copy(alpha = 0.22f)
+                )
+            ) {
+                Text(if (isMusicEnabled) "🔊" else "🔇")
             }
             Button(
                 modifier = Modifier.padding(start = 8.dp),
-                onClick = resetGame
+                onClick = resetGame,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color.White.copy(alpha = 0.22f)
+                )
             ) {
-                Text("Reset")
+                Text("↺")
             }
         }
     }
