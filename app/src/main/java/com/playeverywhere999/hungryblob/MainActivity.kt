@@ -111,6 +111,10 @@ private const val BOT_PREDATOR_AVOID_STRENGTH = 1.15f
 private const val FOOD_CAPTURE_RADIUS_FACTOR = 1.1f
 private const val GAME_PREFS = "hungry_blob_save"
 private const val GAME_STATE_KEY = "state_v2"
+// TODO: Удалить перед релизом: временно снижаем нагрузку на сцену для тестирования поведения хищников.
+private const val IS_PREDATOR_TEST_SPAWN_ENABLED = true
+// TODO: Удалить перед релизом: упрощенная физика еды для поиска причины тормозов.
+private const val IS_FAST_FOOD_PHYSICS_ENABLED = true
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -185,6 +189,7 @@ fun AmoebaGame() {
     var jellyPortalStates by remember { mutableStateOf<Map<Int, Boolean>>(emptyMap()) }
     var eaterPortalStates by remember { mutableStateOf<Map<Int, Boolean>>(emptyMap()) }
     var isMusicEnabled by remember { mutableStateOf(true) }
+    var updateFoodThisFrame by remember { mutableStateOf(true) }
 
     val resetGame: () -> Unit = {
         blobPos = Offset(400f, 700f)
@@ -374,8 +379,12 @@ fun AmoebaGame() {
         val botRadius = blobRadius
         val jellyRadius = blobRadius * 0.9f
         val foodSpawnClearance = max(foodRadius, botRadius * 0.82f)
+        val targetBotCount = if (IS_PREDATOR_TEST_SPAWN_ENABLED) 18 else BOT_AMOEBA_COUNT
+        val targetJellyCount = if (IS_PREDATOR_TEST_SPAWN_ENABLED) 12 else POISON_JELLYFISH_COUNT
+        val targetFoodCount = if (IS_PREDATOR_TEST_SPAWN_ENABLED) 260 else FOOD_PARTICLE_COUNT
+
         if (bots.isEmpty()) {
-            bots = List(BOT_AMOEBA_COUNT) { idx ->
+            bots = List(targetBotCount) { idx ->
                 val headingAngle = Random.nextFloat() * 2f * PI.toFloat()
                 BotAmoeba(
                     id = idx,
@@ -397,7 +406,7 @@ fun AmoebaGame() {
         }
 
         if (jellyfish.isEmpty()) {
-            jellyfish = List(POISON_JELLYFISH_COUNT) { idx ->
+            jellyfish = List(targetJellyCount) { idx ->
                 val angle = Random.nextFloat() * 2f * PI.toFloat()
                 PoisonJellyfish(
                     id = idx,
@@ -416,16 +425,20 @@ fun AmoebaGame() {
 
 
         if (amoebaEaters.isEmpty()) {
+            val spawnDistance = blobRadius * 3.5f
+            val spawnPadding = blobRadius * 1.2f
+            val nearSpawnCenter = Offset(
+                x = blobPos.x.coerceIn(spawnPadding + spawnDistance, worldSize.width - spawnPadding - spawnDistance),
+                y = blobPos.y.coerceIn(spawnPadding + spawnDistance, worldSize.height - spawnPadding - spawnDistance)
+            )
             amoebaEaters = List(AMOEBA_EATER_COUNT) { idx ->
-                val angle = Random.nextFloat() * 2f * PI.toFloat()
+                val angle = (idx.toFloat() / AMOEBA_EATER_COUNT.toFloat()) * 2f * PI.toFloat()
                 AmoebaEater(
                     id = idx,
-                    position = randomFoodPosition(
-                        worldSize = worldSize,
-                        padding = blobRadius * 1.2f,
-                        blobPos = blobPos,
-                        minDistanceFromBlob = blobRadius * 4f,
-                        obstacles = obstacles
+                    // TODO: Удалить перед релизом: для тестирования спавним хищников рядом с игроком.
+                    position = Offset(
+                        x = nearSpawnCenter.x + cos(angle).toFloat() * spawnDistance,
+                        y = nearSpawnCenter.y + sin(angle).toFloat() * spawnDistance
                     ),
                     heading = Offset(cos(angle), sin(angle)),
                     type = PredatorType.entries[idx % PredatorType.entries.size]
@@ -433,8 +446,8 @@ fun AmoebaGame() {
             }
         }
 
-        if (foods.size < FOOD_PARTICLE_COUNT) {
-            val missing = FOOD_PARTICLE_COUNT - foods.size
+        if (foods.size < targetFoodCount) {
+            val missing = targetFoodCount - foods.size
             foods = foods + List(missing) {
                 FoodParticle(
                     id = nextFoodId++,
@@ -449,6 +462,8 @@ fun AmoebaGame() {
                     color = randomFoodColor()
                 )
             }
+        } else if (foods.size > targetFoodCount) {
+            foods = foods.take(targetFoodCount)
         }
 
 
@@ -480,7 +495,10 @@ fun AmoebaGame() {
         shockTimer = if (hitJelly) 1f else (shockTimer - 0.03f).coerceAtLeast(0f)
 
         val foodBaseSpeed = speed * 0.9f
-        foods = foods.map { food ->
+        val shouldUpdateFood = !IS_PREDATOR_TEST_SPAWN_ENABLED || updateFoodThisFrame
+        if (IS_PREDATOR_TEST_SPAWN_ENABLED) updateFoodThisFrame = !updateFoodThisFrame
+        if (shouldUpdateFood) {
+            foods = foods.map { food ->
             val botThreat = bots.minByOrNull { (food.position - it.position).getDistance() }?.position
             val playerDistance = (food.position - blobPos).getDistance()
             val botDistance = botThreat?.let { (food.position - it).getDistance() } ?: Float.MAX_VALUE
@@ -509,59 +527,76 @@ fun AmoebaGame() {
                 x = moved.x.coerceIn(foodRadius, worldSize.width - foodRadius),
                 y = moved.y.coerceIn(foodRadius, worldSize.height - foodRadius)
             )
-            val blockedByLetter = collidesWithObstacles(clamped, foodRadius, obstacles)
-
-            val nextPosition: Offset
-            val finalVelocity: Offset
-            if (!blockedByLetter) {
-                nextPosition = clamped
-                finalVelocity = worldBounced
+            if (IS_FAST_FOOD_PHYSICS_ENABLED) {
+                val escapedCorner = escapeFoodFromWorldCorner(
+                    position = clamped,
+                    velocity = worldBounced,
+                    foodRadius = foodRadius,
+                    worldSize = worldSize,
+                    blobRadius = blobRadius
+                )
+                FoodParticle(
+                    id = food.id,
+                    position = escapedCorner.first,
+                    velocity = escapedCorner.second,
+                    color = food.color
+                )
             } else {
-                val xOnlyMoved = Offset(
-                    x = (food.position.x + worldBounced.x).coerceIn(foodRadius, worldSize.width - foodRadius),
-                    y = food.position.y.coerceIn(foodRadius, worldSize.height - foodRadius)
-                )
-                val yOnlyMoved = Offset(
-                    x = food.position.x.coerceIn(foodRadius, worldSize.width - foodRadius),
-                    y = (food.position.y + worldBounced.y).coerceIn(foodRadius, worldSize.height - foodRadius)
-                )
+                val blockedByLetter = collidesWithObstacles(clamped, foodRadius, obstacles)
 
-                val canSlideX = !collidesWithObstacles(xOnlyMoved, foodRadius, obstacles)
-                val canSlideY = !collidesWithObstacles(yOnlyMoved, foodRadius, obstacles)
+                val nextPosition: Offset
+                val finalVelocity: Offset
+                if (!blockedByLetter) {
+                    nextPosition = clamped
+                    finalVelocity = worldBounced
+                } else {
+                    val xOnlyMoved = Offset(
+                        x = (food.position.x + worldBounced.x).coerceIn(foodRadius, worldSize.width - foodRadius),
+                        y = food.position.y.coerceIn(foodRadius, worldSize.height - foodRadius)
+                    )
+                    val yOnlyMoved = Offset(
+                        x = food.position.x.coerceIn(foodRadius, worldSize.width - foodRadius),
+                        y = (food.position.y + worldBounced.y).coerceIn(foodRadius, worldSize.height - foodRadius)
+                    )
 
-                when {
-                    canSlideX && canSlideY -> {
-                        if (kotlin.math.abs(worldBounced.x) >= kotlin.math.abs(worldBounced.y)) {
+                    val canSlideX = !collidesWithObstacles(xOnlyMoved, foodRadius, obstacles)
+                    val canSlideY = !collidesWithObstacles(yOnlyMoved, foodRadius, obstacles)
+
+                    when {
+                        canSlideX && canSlideY -> {
+                            if (kotlin.math.abs(worldBounced.x) >= kotlin.math.abs(worldBounced.y)) {
+                                nextPosition = xOnlyMoved
+                                finalVelocity = Offset(worldBounced.x, 0f)
+                            } else {
+                                nextPosition = yOnlyMoved
+                                finalVelocity = Offset(0f, worldBounced.y)
+                            }
+                        }
+                        canSlideX -> {
                             nextPosition = xOnlyMoved
                             finalVelocity = Offset(worldBounced.x, 0f)
-                        } else {
+                        }
+                        canSlideY -> {
                             nextPosition = yOnlyMoved
                             finalVelocity = Offset(0f, worldBounced.y)
                         }
-                    }
-                    canSlideX -> {
-                        nextPosition = xOnlyMoved
-                        finalVelocity = Offset(worldBounced.x, 0f)
-                    }
-                    canSlideY -> {
-                        nextPosition = yOnlyMoved
-                        finalVelocity = Offset(0f, worldBounced.y)
-                    }
-                    else -> {
-                        nextPosition = food.position
-                        finalVelocity = worldBounced * -0.45f
+                        else -> {
+                            nextPosition = food.position
+                            finalVelocity = worldBounced * -0.45f
+                        }
                     }
                 }
-            }
 
-            val escapedCorner = escapeFoodFromWorldCorner(
-                position = nextPosition,
-                velocity = finalVelocity,
-                foodRadius = foodRadius,
-                worldSize = worldSize,
-                blobRadius = blobRadius
-            )
-            FoodParticle(id = food.id, position = escapedCorner.first, velocity = escapedCorner.second, color = food.color)
+                val escapedCorner = escapeFoodFromWorldCorner(
+                    position = nextPosition,
+                    velocity = finalVelocity,
+                    foodRadius = foodRadius,
+                    worldSize = worldSize,
+                    blobRadius = blobRadius
+                )
+                FoodParticle(id = food.id, position = escapedCorner.first, velocity = escapedCorner.second, color = food.color)
+            }
+            }
         }
 
         val botVisionRange = botRadius * 8f
