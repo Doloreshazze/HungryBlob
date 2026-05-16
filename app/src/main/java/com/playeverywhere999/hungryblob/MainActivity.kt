@@ -638,25 +638,28 @@ fun AmoebaGame() {
             }
             val predatorAvoidRange = botRadius * BOT_PREDATOR_AVOID_RANGE_FACTOR
             val predatorAvoidRangeSq = predatorAvoidRange * predatorAvoidRange
-            var nearestDx = 0f
-            var nearestDy = 0f
-            var nearestDistSq = Float.MAX_VALUE
-            for (predator in amoebaEaters) {
+            var nearestPredatorDistance = Float.MAX_VALUE
+            val predatorAvoidForce = amoebaEaters.fold(Offset.Zero) { acc, predator ->
                 val dx = bot.position.x - predator.position.x
                 val dy = bot.position.y - predator.position.y
                 val distSq = dx * dx + dy * dy
-                if (distSq in 0.000001f..predatorAvoidRangeSq && distSq < nearestDistSq) {
-                    nearestDistSq = distSq
-                    nearestDx = dx
-                    nearestDy = dy
-                }
+                if (distSq in 0.000001f..predatorAvoidRangeSq) {
+                    val distance = sqrt(distSq)
+                    nearestPredatorDistance = min(nearestPredatorDistance, distance)
+                    val linearThreat = ((predatorAvoidRange - distance) / predatorAvoidRange).coerceIn(0f, 1f)
+                    val panicBoost = linearThreat * linearThreat
+                    val strength = (linearThreat + panicBoost) * BOT_PREDATOR_AVOID_STRENGTH
+                    acc + Offset(dx / distance, dy / distance) * strength
+                } else acc
             }
-            val predatorAvoidForce = if (nearestDistSq != Float.MAX_VALUE) {
-                val distance = sqrt(nearestDistSq)
-                val strength = ((predatorAvoidRange - distance) / predatorAvoidRange) * BOT_PREDATOR_AVOID_STRENGTH
-                Offset(nearestDx / distance, nearestDy / distance) * strength
-            } else Offset.Zero
-            val botDirection = (chaseDirection + repelForce + predatorAvoidForce).normalized().let {
+            val predatorThreat = if (nearestPredatorDistance == Float.MAX_VALUE) {
+                0f
+            } else {
+                ((predatorAvoidRange - nearestPredatorDistance) / predatorAvoidRange).coerceIn(0f, 1f)
+            }
+            val foodFocus = (1f - predatorThreat * 0.85f).coerceIn(0.15f, 1f)
+            val steering = (chaseDirection * foodFocus) + repelForce + predatorAvoidForce
+            val botDirection = steering.normalized().let {
                 if (it.getDistance() > 0.001f) it else chaseDirection
             }
             val botSpeed = speed * 0.88f
