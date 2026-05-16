@@ -111,6 +111,8 @@ private const val BOT_PREDATOR_AVOID_STRENGTH = 1.15f
 private const val FOOD_CAPTURE_RADIUS_FACTOR = 1.1f
 private const val GAME_PREFS = "hungry_blob_save"
 private const val GAME_STATE_KEY = "state_v2"
+// TODO: Удалить перед релизом: временно снижаем нагрузку на сцену для тестирования поведения хищников.
+private const val IS_PREDATOR_TEST_SPAWN_ENABLED = true
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -374,8 +376,12 @@ fun AmoebaGame() {
         val botRadius = blobRadius
         val jellyRadius = blobRadius * 0.9f
         val foodSpawnClearance = max(foodRadius, botRadius * 0.82f)
+        val targetBotCount = if (IS_PREDATOR_TEST_SPAWN_ENABLED) 18 else BOT_AMOEBA_COUNT
+        val targetJellyCount = if (IS_PREDATOR_TEST_SPAWN_ENABLED) 12 else POISON_JELLYFISH_COUNT
+        val targetFoodCount = if (IS_PREDATOR_TEST_SPAWN_ENABLED) 260 else FOOD_PARTICLE_COUNT
+
         if (bots.isEmpty()) {
-            bots = List(BOT_AMOEBA_COUNT) { idx ->
+            bots = List(targetBotCount) { idx ->
                 val headingAngle = Random.nextFloat() * 2f * PI.toFloat()
                 BotAmoeba(
                     id = idx,
@@ -397,7 +403,7 @@ fun AmoebaGame() {
         }
 
         if (jellyfish.isEmpty()) {
-            jellyfish = List(POISON_JELLYFISH_COUNT) { idx ->
+            jellyfish = List(targetJellyCount) { idx ->
                 val angle = Random.nextFloat() * 2f * PI.toFloat()
                 PoisonJellyfish(
                     id = idx,
@@ -437,8 +443,8 @@ fun AmoebaGame() {
             }
         }
 
-        if (foods.size < FOOD_PARTICLE_COUNT) {
-            val missing = FOOD_PARTICLE_COUNT - foods.size
+        if (foods.size < targetFoodCount) {
+            val missing = targetFoodCount - foods.size
             foods = foods + List(missing) {
                 FoodParticle(
                     id = nextFoodId++,
@@ -453,6 +459,8 @@ fun AmoebaGame() {
                     color = randomFoodColor()
                 )
             }
+        } else if (foods.size > targetFoodCount) {
+            foods = foods.take(targetFoodCount)
         }
 
 
