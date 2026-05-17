@@ -40,6 +40,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.IntSize
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -202,6 +203,11 @@ fun AmoebaGame() {
     var eaterPortalStates by remember { mutableStateOf<Map<Int, Boolean>>(emptyMap()) }
     var isMusicEnabled by remember { mutableStateOf(true) }
     var updateFoodThisFrame by remember { mutableStateOf(true) }
+    var cachedViewportSize by remember { mutableStateOf(IntSize.Zero) }
+    var cachedWorldSize by remember { mutableStateOf(Size.Zero) }
+    var cachedObstacles by remember { mutableStateOf(emptyList<ObstacleRect>()) }
+    var cachedObstacleBounds by remember { mutableStateOf<ObstacleBounds?>(null) }
+    var cachedObstacleIndex by remember { mutableStateOf<ObstacleIndex?>(null) }
 
     val resetGame: () -> Unit = {
         blobPos = Offset(400f, 700f)
@@ -280,10 +286,19 @@ fun AmoebaGame() {
         val speed = with(density) { 2.5f }
         val viewportSize = size
         val worldSize = Size(viewportSize.width * 10f, viewportSize.height * 4f)
-        val obstacles = buildLetterObstacles(worldSize, viewportSize)
         val blobRadius = min(viewportSize.width, viewportSize.height) * 0.09f
-        val obstacleBounds = obstacleBounds(obstacles)
-        val obstacleIndex = buildObstacleIndex(obstacles, blobRadius * 1.1f)
+        val viewportSizeInt = IntSize(viewportSize.width.toInt(), viewportSize.height.toInt())
+        if (cachedViewportSize != viewportSizeInt || cachedWorldSize != worldSize) {
+            val newObstacles = buildLetterObstacles(worldSize, viewportSize)
+            cachedViewportSize = viewportSizeInt
+            cachedWorldSize = worldSize
+            cachedObstacles = newObstacles
+            cachedObstacleBounds = obstacleBounds(newObstacles)
+            cachedObstacleIndex = buildObstacleIndex(newObstacles, blobRadius * 1.1f)
+        }
+        val obstacles = cachedObstacles
+        val obstacleBounds = cachedObstacleBounds
+        val obstacleIndex = cachedObstacleIndex
         val movementPadding = blobRadius * 0.5f
         val portalRadius = blobRadius * 0.85f
 
