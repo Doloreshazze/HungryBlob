@@ -1,5 +1,6 @@
 package com.playeverywhere999.hungryblob
 
+import android.graphics.Paint
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -56,7 +57,13 @@ import kotlin.math.sin
 import kotlin.math.sqrt
 import kotlin.random.Random
 
-private data class FoodParticle(val id: Long, val position: Offset, val velocity: Offset, val color: Color)
+private data class FoodParticle(
+    val id: Long,
+    val position: Offset,
+    val velocity: Offset,
+    val color: Color,
+    val emoji: String
+)
 private data class ObstacleRect(val left: Float, val top: Float, val right: Float, val bottom: Float)
 private data class BotAmoeba(
     val id: Int,
@@ -371,7 +378,8 @@ fun AmoebaGame() {
                     obstacles = obstacles
                 ),
                 velocity = Offset.Zero,
-                color = randomFoodColor()
+                color = randomFoodColor(),
+                emoji = randomFoodEmoji()
             )
         }
 
@@ -472,7 +480,8 @@ fun AmoebaGame() {
                         obstacles = obstacles
                     ),
                     velocity = Offset.Zero,
-                    color = randomFoodColor()
+                    color = randomFoodColor(),
+                    emoji = randomFoodEmoji()
                 )
             }
         } else if (foods.size > targetFoodCount) {
@@ -552,7 +561,8 @@ fun AmoebaGame() {
                     id = food.id,
                     position = escapedCorner.first,
                     velocity = escapedCorner.second,
-                    color = food.color
+                    color = food.color,
+                    emoji = food.emoji
                 )
             } else {
                 val blockedByLetter = collidesWithObstacles(clamped, foodRadius, obstacles)
@@ -607,7 +617,7 @@ fun AmoebaGame() {
                     worldSize = worldSize,
                     blobRadius = blobRadius
                 )
-                FoodParticle(id = food.id, position = escapedCorner.first, velocity = escapedCorner.second, color = food.color)
+                FoodParticle(id = food.id, position = escapedCorner.first, velocity = escapedCorner.second, color = food.color, emoji = food.emoji)
             }
             }
         }
@@ -797,7 +807,8 @@ fun AmoebaGame() {
                         obstacles = obstacles
                     ),
                     velocity = Offset.Zero,
-                    color = randomFoodColor()
+                    color = randomFoodColor(),
+                    emoji = randomFoodEmoji()
                 )
             }
         }
@@ -1042,8 +1053,15 @@ fun AmoebaGame() {
             )
         }
 
+        val emojiPaint = Paint().apply {
+            textAlign = Paint.Align.CENTER
+            textSize = foodRadius * 2.2f
+            isAntiAlias = true
+        }
         foods.forEach { food ->
-            drawCircle(color = food.color, radius = foodRadius, center = food.position - cameraTopLeft)
+            val center = food.position - cameraTopLeft
+            drawCircle(color = food.color.copy(alpha = 0.35f), radius = foodRadius, center = center)
+            drawContext.canvas.nativeCanvas.drawText(food.emoji, center.x, center.y + emojiPaint.textSize * 0.35f, emojiPaint)
         }
 
         jellyfish.forEach { jelly ->
@@ -1632,6 +1650,10 @@ private fun Offset.normalized(): Offset {
 }
 
 
+private fun randomFoodEmoji(): String {
+    return listOf("🍕", "🍔", "🍩").random()
+}
+
 private fun randomFoodColor(): Color {
     val palette = listOf(
         Color(0xFFE5A55E),
@@ -1660,7 +1682,8 @@ private fun saveSnapshot(context: android.content.Context, snapshot: GameSnapsho
             food.position.y,
             food.velocity.x,
             food.velocity.y,
-            food.color.toArgb()
+            food.color.toArgb(),
+            food.emoji
         ).joinToString(",")
     }
     val header = listOf(
@@ -1699,12 +1722,13 @@ private fun loadSnapshot(context: android.content.Context): GameSnapshot? {
         } else {
             split[1].split(';').mapNotNull { token ->
                 val parts = token.split(',')
-                if (parts.size !in setOf(5, 6)) return@mapNotNull null
+                if (parts.size !in setOf(5, 6, 7)) return@mapNotNull null
                 FoodParticle(
                     id = parts[0].toLong(),
                     position = Offset(parts[1].toFloat(), parts[2].toFloat()),
                     velocity = Offset(parts[3].toFloat(), parts[4].toFloat()),
-                    color = if (parts.size == 6) Color(parts[5].toInt()) else randomFoodColor()
+                    color = if (parts.size >= 6) Color(parts[5].toInt()) else randomFoodColor(),
+                    emoji = if (parts.size >= 7) parts[6] else randomFoodEmoji()
                 )
             }
         }
