@@ -109,9 +109,10 @@ private data class GameSnapshot(
 )
 
 private const val FOOD_PARTICLE_COUNT = 440
-private const val BOT_AMOEBA_COUNT = 30
+private const val INITIAL_BOT_AMOEBA_COUNT = 60
 private const val POISON_JELLYFISH_COUNT = 24
 private const val AMOEBA_EATER_COUNT = 4
+private const val EVIL_AMOEBA_SPAWN_STEP = 10
 private const val PORTAL_COUNT = 10
 private const val BOT_SOFT_REPEL_RANGE_FACTOR = 1.85f
 private const val BOT_SOFT_REPEL_STRENGTH = 0.14f
@@ -122,7 +123,7 @@ private const val FOOD_CAPTURE_RADIUS_FACTOR = 1.1f
 private const val GAME_PREFS = "hungry_blob_save"
 private const val GAME_STATE_KEY = "state_v2"
 // TODO: Удалить перед релизом: временно снижаем нагрузку на сцену для тестирования поведения хищников.
-private const val IS_PREDATOR_TEST_SPAWN_ENABLED = true
+private const val IS_PREDATOR_TEST_SPAWN_ENABLED = false
 // TODO: Удалить перед релизом: упрощенная физика еды для поиска причины тормозов.
 private const val IS_FAST_FOOD_PHYSICS_ENABLED = true
 
@@ -191,6 +192,7 @@ fun AmoebaGame() {
     var playerFoodCount by remember { mutableStateOf(0) }
     var splitEventTimer by remember { mutableStateOf(0f) }
     var nextSplitAt by remember { mutableStateOf(10) }
+    var nextEvilAmoebaSpawnAtBotCount by remember { mutableStateOf(INITIAL_BOT_AMOEBA_COUNT + EVIL_AMOEBA_SPAWN_STEP) }
     var amoebaEaters by remember { mutableStateOf(emptyList<AmoebaEater>()) }
     var playerRespawnTimer by remember { mutableStateOf(0f) }
     var portals by remember { mutableStateOf(emptyList<TeleportPortal>()) }
@@ -217,6 +219,7 @@ fun AmoebaGame() {
         playerFoodCount = 0
         splitEventTimer = 0f
         nextSplitAt = 10
+        nextEvilAmoebaSpawnAtBotCount = INITIAL_BOT_AMOEBA_COUNT + EVIL_AMOEBA_SPAWN_STEP
         amoebaEaters = emptyList()
         playerRespawnTimer = 0f
         portals = emptyList()
@@ -356,17 +359,15 @@ fun AmoebaGame() {
             if (playerFoodCount >= nextSplitAt) {
                 nextSplitAt += 10
                 splitEventTimer = 1f
-                if (bots.size < BOT_AMOEBA_COUNT) {
-                    val splitDir = Offset(cos(morphProgress * 2f * PI.toFloat()), sin(morphProgress * 2f * PI.toFloat())).normalized()
-                    bots = bots + BotAmoeba(
-                        id = (bots.maxOfOrNull { it.id } ?: 0) + 1,
-                        position = moveWithSliding(blobPos, splitDir * (blobRadius * 2.4f), blobRadius, obstacles, worldSize, blobRadius),
-                        heading = splitDir,
-                        color = botColor(Random.nextInt(BOT_AMOEBA_COUNT)),
-                        vacuoleProgress = 1f,
-                        foodCount = 0
-                    )
-                }
+                val splitDir = Offset(cos(morphProgress * 2f * PI.toFloat()), sin(morphProgress * 2f * PI.toFloat())).normalized()
+                bots = bots + BotAmoeba(
+                    id = (bots.maxOfOrNull { it.id } ?: 0) + 1,
+                    position = moveWithSliding(blobPos, splitDir * (blobRadius * 2.4f), blobRadius, obstacles, worldSize, blobRadius),
+                    heading = splitDir,
+                    color = botColor(Random.nextInt((bots.size + 1).coerceAtLeast(1))),
+                    vacuoleProgress = 1f,
+                    foodCount = 0
+                )
             }
             playerColor = candidateFoodToConsume.color
             foods = foods.filterNot { it.id == candidateFoodToConsume.id } + FoodParticle(
@@ -390,7 +391,7 @@ fun AmoebaGame() {
         val botRadius = blobRadius
         val jellyRadius = blobRadius * 0.9f
         val foodSpawnClearance = max(foodRadius, botRadius * 0.82f)
-        val targetBotCount = if (IS_PREDATOR_TEST_SPAWN_ENABLED) 18 else BOT_AMOEBA_COUNT
+        val targetBotCount = if (IS_PREDATOR_TEST_SPAWN_ENABLED) 18 else INITIAL_BOT_AMOEBA_COUNT
         val targetJellyCount = if (IS_PREDATOR_TEST_SPAWN_ENABLED) 12 else POISON_JELLYFISH_COUNT
         val targetFoodCount = if (IS_PREDATOR_TEST_SPAWN_ENABLED) 260 else FOOD_PARTICLE_COUNT
 
@@ -768,9 +769,8 @@ fun AmoebaGame() {
         }
 
         val splitReadyBots = bots.filter { it.foodCount >= 10 }
-        if (splitReadyBots.isNotEmpty() && bots.size < BOT_AMOEBA_COUNT) {
-            val availableSlots = BOT_AMOEBA_COUNT - bots.size
-            val parentsToSplit = splitReadyBots.take(availableSlots)
+        if (splitReadyBots.isNotEmpty()) {
+            val parentsToSplit = splitReadyBots
             val parentIds = parentsToSplit.map { it.id }.toSet()
             val nextBotIdStart = (bots.maxOfOrNull { it.id } ?: 0) + 1
             val spawnedBots = parentsToSplit.mapIndexed { idx, parent ->
@@ -812,6 +812,26 @@ fun AmoebaGame() {
                     emoji = randomFoodEmoji()
                 )
             }
+        }
+
+
+        while (bots.size >= nextEvilAmoebaSpawnAtBotCount) {
+            val spawnAngle = Random.nextFloat() * 2f * PI.toFloat()
+            val predatorId = (amoebaEaters.maxOfOrNull { it.id } ?: 0) + 1
+            val eaterRadius = blobRadius * 1.05f
+            amoebaEaters = amoebaEaters + AmoebaEater(
+                id = predatorId,
+                position = randomFoodPosition(
+                    worldSize = worldSize,
+                    padding = eaterRadius + movementPadding,
+                    blobPos = blobPos,
+                    minDistanceFromBlob = blobRadius * 2.4f,
+                    obstacles = obstacles
+                ),
+                heading = Offset(cos(spawnAngle), sin(spawnAngle)),
+                type = PredatorType.EVIL_AMOEBA
+            )
+            nextEvilAmoebaSpawnAtBotCount += EVIL_AMOEBA_SPAWN_STEP
         }
 
         val eatenBotIds = mutableSetOf<Int>()
@@ -1142,7 +1162,7 @@ fun AmoebaGame() {
             topLeft = Offset(16f, 78f),
             size = Size(150f, 22f),
             botCount = bots.size,
-            maxBotCount = BOT_AMOEBA_COUNT
+            maxBotCount = bots.size
         )
 
         }
@@ -1422,7 +1442,7 @@ private fun DrawScope.drawSplitCelebration(center: Offset, radius: Float, t: Flo
 
 private fun botColor(index: Int): Color =
     Color.hsv(
-        hue = (index * (360f / BOT_AMOEBA_COUNT)) % 360f,
+        hue = (index * (360f / INITIAL_BOT_AMOEBA_COUNT)) % 360f,
         saturation = 0.55f,
         value = 0.95f
     )
