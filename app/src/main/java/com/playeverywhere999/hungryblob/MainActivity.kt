@@ -1599,8 +1599,27 @@ private fun collidesWithObstaclesFast(
     if (center.x + radius < bounds.left || center.x - radius > bounds.right || center.y + radius < bounds.top || center.y - radius > bounds.bottom) {
         return false
     }
-    val nearby = nearbyObstacles(center, radius, index)
-    return collidesWithObstacles(center, radius, nearby ?: obstacles)
+    if (index == null) return collidesWithObstacles(center, radius, obstacles)
+    val cellSize = index.cellSize
+    val minCellX = kotlin.math.floor((center.x - radius) / cellSize).toInt()
+    val maxCellX = kotlin.math.floor((center.x + radius) / cellSize).toInt()
+    val minCellY = kotlin.math.floor((center.y - radius) / cellSize).toInt()
+    val maxCellY = kotlin.math.floor((center.y + radius) / cellSize).toInt()
+
+    for (x in minCellX..maxCellX) {
+        for (y in minCellY..maxCellY) {
+            val key = (x.toLong() shl 32) xor (y.toLong() and 0xffffffffL)
+            val cellObstacles = index.buckets[key] ?: continue
+            for (obstacle in cellObstacles) {
+                val closestX = center.x.coerceIn(obstacle.left, obstacle.right)
+                val closestY = center.y.coerceIn(obstacle.top, obstacle.bottom)
+                val dx = center.x - closestX
+                val dy = center.y - closestY
+                if (dx * dx + dy * dy < radius * radius) return true
+            }
+        }
+    }
+    return false
 }
 
 private fun buildObstacleIndex(obstacles: List<ObstacleRect>, cellSize: Float): ObstacleIndex? {
@@ -1619,23 +1638,6 @@ private fun buildObstacleIndex(obstacles: List<ObstacleRect>, cellSize: Float): 
         }
     }
     return ObstacleIndex(cellSize = cellSize, buckets = buckets)
-}
-
-private fun nearbyObstacles(center: Offset, radius: Float, index: ObstacleIndex?): List<ObstacleRect>? {
-    if (index == null) return null
-    val cellSize = index.cellSize
-    val minCellX = kotlin.math.floor((center.x - radius) / cellSize).toInt()
-    val maxCellX = kotlin.math.floor((center.x + radius) / cellSize).toInt()
-    val minCellY = kotlin.math.floor((center.y - radius) / cellSize).toInt()
-    val maxCellY = kotlin.math.floor((center.y + radius) / cellSize).toInt()
-    val out = LinkedHashSet<ObstacleRect>()
-    for (x in minCellX..maxCellX) {
-        for (y in minCellY..maxCellY) {
-            val key = (x.toLong() shl 32) xor (y.toLong() and 0xffffffffL)
-            index.buckets[key]?.let { out.addAll(it) }
-        }
-    }
-    return out.toList()
 }
 
 private fun buildLetterObstacles(worldSize: Size, viewportSize: Size): List<ObstacleRect> {
