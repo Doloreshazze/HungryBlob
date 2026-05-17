@@ -551,9 +551,12 @@ fun AmoebaGame() {
                 y = moved.y.coerceIn(foodRadius, worldSize.height - foodRadius)
             )
             if (IS_FAST_FOOD_PHYSICS_ENABLED) {
+                val blockedByLetter = collidesWithObstacles(clamped, foodRadius, obstacles)
+                val nextPosition = if (blockedByLetter) food.position else clamped
+                val nextVelocity = if (blockedByLetter) worldBounced * -0.45f else worldBounced
                 val escapedCorner = escapeFoodFromWorldCorner(
-                    position = clamped,
-                    velocity = worldBounced,
+                    position = nextPosition,
+                    velocity = nextVelocity,
                     foodRadius = foodRadius,
                     worldSize = worldSize,
                     blobRadius = blobRadius
