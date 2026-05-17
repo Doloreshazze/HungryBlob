@@ -1132,11 +1132,10 @@ fun AmoebaGame() {
             drawSplitCelebration(blobPos - cameraTopLeft, blobRadius * (1f + splitEventTimer), splitEventTimer, morphProgress)
         }
         val progress = ((playerFoodCount % 10) / 10f).coerceIn(0f, 1f)
-        drawFoodGaugeAsMiniAmoeba(
+        drawFoodGauge(
             topLeft = Offset(16f, 16f),
-            size = Size(96f, 54f),
-            progress = progress,
-            morphProgress = morphProgress
+            size = Size(150f, 22f),
+            progress = progress
         )
         drawBotCountGauge(
             topLeft = Offset(16f, 78f),
@@ -1195,36 +1194,24 @@ private fun DrawScope.drawBotCountGauge(
 }
 
 
-private fun DrawScope.drawFoodGaugeAsMiniAmoeba(
+private fun DrawScope.drawFoodGauge(
     topLeft: Offset,
     size: Size,
-    progress: Float,
-    morphProgress: Float
+    progress: Float
 ) {
-    val center = Offset(topLeft.x + size.width * 0.5f, topLeft.y + size.height * 0.5f)
-    val radius = min(size.width, size.height) * 0.42f
-    val silhouette = buildAmoebaPath(
-        center = center,
-        baseRadius = radius,
-        morphProgress = morphProgress,
-        direction = Offset(1f, 0.15f),
-        engulfing = false,
-        foodScreenPosition = null,
-        engulfProgress = 0f
+    val clampedProgress = progress.coerceIn(0f, 1f)
+    drawRoundRect(
+        color = Color(0x66365566),
+        topLeft = topLeft,
+        size = size,
+        cornerRadius = androidx.compose.ui.geometry.CornerRadius(11f, 11f)
     )
-
-    drawPath(
-        path = silhouette,
-        color = Color(0xFF133342)
+    drawRoundRect(
+        color = Color(0xFF72F0A0),
+        topLeft = Offset(topLeft.x + 2f, topLeft.y + 2f),
+        size = Size((size.width - 4f) * clampedProgress, size.height - 4f),
+        cornerRadius = androidx.compose.ui.geometry.CornerRadius(9f, 9f)
     )
-
-    clipPath(silhouette) {
-        drawRect(
-            color = Color(0xFF72F0A0),
-            topLeft = Offset(topLeft.x, topLeft.y),
-            size = Size(size.width * progress, size.height)
-        )
-    }
 }
 
 private fun buildAmoebaPath(
