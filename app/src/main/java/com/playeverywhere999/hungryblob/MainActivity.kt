@@ -25,6 +25,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -40,6 +41,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.IntSize
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -66,6 +68,8 @@ private data class FoodParticle(
     val emoji: String
 )
 private data class ObstacleRect(val left: Float, val top: Float, val right: Float, val bottom: Float)
+private data class ObstacleBounds(val left: Float, val top: Float, val right: Float, val bottom: Float)
+private data class ObstacleIndex(val cellSize: Float, val buckets: Map<Long, List<ObstacleRect>>)
 private data class BotAmoeba(
     val id: Int,
     val position: Offset,
@@ -125,6 +129,9 @@ private const val GAME_STATE_KEY = "state_v2"
 private const val IS_PREDATOR_TEST_SPAWN_ENABLED = true
 // TODO: Удалить перед релизом: упрощенная физика еды для поиска причины тормозов.
 private const val IS_FAST_FOOD_PHYSICS_ENABLED = true
+private const val FAST_FOOD_PARTICLE_COUNT = 140
+private const val FAST_BOT_COUNT = 10
+private const val FAST_JELLYFISH_COUNT = 6
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -200,6 +207,11 @@ fun AmoebaGame() {
     var eaterPortalStates by remember { mutableStateOf<Map<Int, Boolean>>(emptyMap()) }
     var isMusicEnabled by remember { mutableStateOf(true) }
     var updateFoodThisFrame by remember { mutableStateOf(true) }
+    var cachedViewportSize by remember { mutableStateOf(IntSize.Zero) }
+    var cachedWorldSize by remember { mutableStateOf(Size.Zero) }
+    var cachedObstacles by remember { mutableStateOf(emptyList<ObstacleRect>()) }
+    var cachedObstacleBounds by remember { mutableStateOf<ObstacleBounds?>(null) }
+    var cachedObstacleIndex by remember { mutableStateOf<ObstacleIndex?>(null) }
 
     val resetGame: () -> Unit = {
         blobPos = Offset(400f, 700f)
@@ -226,19 +238,23 @@ fun AmoebaGame() {
         eaterPortalStates = emptyMap()
     }
 
-    DisposableEffect(lifecycleOwner, blobPos, foods, vacuoleProgress, consumedFoodId, moveHeading, nextFoodId) {
+    val latestSnapshot by rememberUpdatedState(
+        GameSnapshot(
+            blobPos = blobPos,
+            foods = foods,
+            vacuoleProgress = vacuoleProgress,
+            consumedFoodId = consumedFoodId,
+            moveHeading = moveHeading,
+            nextFoodId = nextFoodId
+        )
+    )
+
+    DisposableEffect(lifecycleOwner) {
         val observer = object : DefaultLifecycleObserver {
             override fun onPause(owner: LifecycleOwner) {
                 saveSnapshot(
                     context = context,
-                    snapshot = GameSnapshot(
-                        blobPos = blobPos,
-                        foods = foods,
-                        vacuoleProgress = vacuoleProgress,
-                        consumedFoodId = consumedFoodId,
-                        moveHeading = moveHeading,
-                        nextFoodId = nextFoodId
-                    )
+                    snapshot = latestSnapshot
                 )
             }
         }
@@ -278,8 +294,19 @@ fun AmoebaGame() {
         val speed = with(density) { 2.5f }
         val viewportSize = size
         val worldSize = Size(viewportSize.width * 10f, viewportSize.height * 4f)
-        val obstacles = buildLetterObstacles(worldSize, viewportSize)
         val blobRadius = min(viewportSize.width, viewportSize.height) * 0.09f
+        val viewportSizeInt = IntSize(viewportSize.width.toInt(), viewportSize.height.toInt())
+        if (cachedViewportSize != viewportSizeInt || cachedWorldSize != worldSize) {
+            val newObstacles = buildLetterObstacles(worldSize, viewportSize)
+            cachedViewportSize = viewportSizeInt
+            cachedWorldSize = worldSize
+            cachedObstacles = newObstacles
+            cachedObstacleBounds = obstacleBounds(newObstacles)
+            cachedObstacleIndex = buildObstacleIndex(newObstacles, blobRadius * 1.1f)
+        }
+        val obstacles = cachedObstacles
+        val obstacleBounds = cachedObstacleBounds
+        val obstacleIndex = cachedObstacleIndex
         val movementPadding = blobRadius * 0.5f
         val portalRadius = blobRadius * 0.85f
 
@@ -390,9 +417,21 @@ fun AmoebaGame() {
         val botRadius = blobRadius
         val jellyRadius = blobRadius * 0.9f
         val foodSpawnClearance = max(foodRadius, botRadius * 0.82f)
-        val targetBotCount = if (IS_PREDATOR_TEST_SPAWN_ENABLED) 18 else BOT_AMOEBA_COUNT
-        val targetJellyCount = if (IS_PREDATOR_TEST_SPAWN_ENABLED) 12 else POISON_JELLYFISH_COUNT
-        val targetFoodCount = if (IS_PREDATOR_TEST_SPAWN_ENABLED) 260 else FOOD_PARTICLE_COUNT
+        val targetBotCount = when {
+            IS_FAST_FOOD_PHYSICS_ENABLED -> FAST_BOT_COUNT
+            IS_PREDATOR_TEST_SPAWN_ENABLED -> 18
+            else -> BOT_AMOEBA_COUNT
+        }
+        val targetJellyCount = when {
+            IS_FAST_FOOD_PHYSICS_ENABLED -> FAST_JELLYFISH_COUNT
+            IS_PREDATOR_TEST_SPAWN_ENABLED -> 12
+            else -> POISON_JELLYFISH_COUNT
+        }
+        val targetFoodCount = when {
+            IS_FAST_FOOD_PHYSICS_ENABLED -> FAST_FOOD_PARTICLE_COUNT
+            IS_PREDATOR_TEST_SPAWN_ENABLED -> 260
+            else -> FOOD_PARTICLE_COUNT
+        }
 
         if (bots.isEmpty()) {
             bots = List(targetBotCount) { idx ->
@@ -551,9 +590,18 @@ fun AmoebaGame() {
                 y = moved.y.coerceIn(foodRadius, worldSize.height - foodRadius)
             )
             if (IS_FAST_FOOD_PHYSICS_ENABLED) {
+                val blockedByLetter = collidesWithObstaclesFast(
+                    center = clamped,
+                    radius = foodRadius,
+                    obstacles = obstacles,
+                    bounds = obstacleBounds,
+                    index = obstacleIndex
+                )
+                val nextPosition = if (blockedByLetter) food.position else clamped
+                val nextVelocity = if (blockedByLetter) worldBounced * -0.45f else worldBounced
                 val escapedCorner = escapeFoodFromWorldCorner(
-                    position = clamped,
-                    velocity = worldBounced,
+                    position = nextPosition,
+                    velocity = nextVelocity,
                     foodRadius = foodRadius,
                     worldSize = worldSize,
                     blobRadius = blobRadius
@@ -714,7 +762,7 @@ fun AmoebaGame() {
                 padding = botRadius
             )
             val isStuck = (moved - bot.position).getDistance() < 0.2f
-            if (isStuck) {
+            val botAfterMove = if (isStuck) {
                 val randomAngle = Random.nextFloat() * 2f * PI.toFloat()
                 val escapeHeading = Offset(cos(randomAngle), sin(randomAngle))
                 val escaped = moveWithSliding(
@@ -729,21 +777,32 @@ fun AmoebaGame() {
             } else {
                 bot.copy(position = moved, heading = botDirection, color = bot.color)
             }
-        }.map { bot ->
-            val zapped = jellyfish.any { (it.position - bot.position).getDistance() < botRadius + jellyRadius * 0.62f }
+            var nearestJellyPos: Offset? = null
+            var nearestJellyDistSq = Float.MAX_VALUE
+            for (jelly in jellyfish) {
+                val dx = jelly.position.x - botAfterMove.position.x
+                val dy = jelly.position.y - botAfterMove.position.y
+                val distSq = dx * dx + dy * dy
+                if (distSq < nearestJellyDistSq) {
+                    nearestJellyDistSq = distSq
+                    nearestJellyPos = jelly.position
+                }
+            }
+            val zapRadius = botRadius + jellyRadius * 0.62f
+            val zapped = nearestJellyDistSq < zapRadius * zapRadius
             val newShock = if (zapped) 1f else (bot.shockTimer - 0.03f).coerceAtLeast(0f)
-            if (zapped) {
-                val away = (bot.position - jellyfish.minByOrNull { (it.position - bot.position).getDistance() }!!.position).normalized()
+            if (zapped && nearestJellyPos != null) {
+                val away = (botAfterMove.position - nearestJellyPos!!).normalized()
                 val pushed = moveWithSliding(
-                    current = bot.position,
+                    current = botAfterMove.position,
                     velocity = away * (speed * 3.2f),
                     radius = botRadius,
                     obstacles = obstacles,
                     worldSize = worldSize,
                     padding = botRadius
                 )
-                bot.copy(position = pushed, shockTimer = newShock)
-            } else bot.copy(shockTimer = newShock)
+                botAfterMove.copy(position = pushed, shockTimer = newShock)
+            } else botAfterMove.copy(shockTimer = newShock)
         }
 
         val foodsToRemoveByBots = mutableSetOf<Long>()
@@ -1544,6 +1603,73 @@ private fun collidesWithObstacles(center: Offset, radius: Float, obstacles: List
         val dy = center.y - closestY
         dx * dx + dy * dy < radius * radius
     }
+
+private fun obstacleBounds(obstacles: List<ObstacleRect>): ObstacleBounds? {
+    if (obstacles.isEmpty()) return null
+    var left = Float.MAX_VALUE
+    var top = Float.MAX_VALUE
+    var right = Float.MIN_VALUE
+    var bottom = Float.MIN_VALUE
+    obstacles.forEach { obstacle ->
+        left = min(left, obstacle.left)
+        top = min(top, obstacle.top)
+        right = max(right, obstacle.right)
+        bottom = max(bottom, obstacle.bottom)
+    }
+    return ObstacleBounds(left = left, top = top, right = right, bottom = bottom)
+}
+
+private fun collidesWithObstaclesFast(
+    center: Offset,
+    radius: Float,
+    obstacles: List<ObstacleRect>,
+    bounds: ObstacleBounds?,
+    index: ObstacleIndex?
+): Boolean {
+    if (bounds == null) return false
+    if (center.x + radius < bounds.left || center.x - radius > bounds.right || center.y + radius < bounds.top || center.y - radius > bounds.bottom) {
+        return false
+    }
+    if (index == null) return collidesWithObstacles(center, radius, obstacles)
+    val cellSize = index.cellSize
+    val minCellX = kotlin.math.floor((center.x - radius) / cellSize).toInt()
+    val maxCellX = kotlin.math.floor((center.x + radius) / cellSize).toInt()
+    val minCellY = kotlin.math.floor((center.y - radius) / cellSize).toInt()
+    val maxCellY = kotlin.math.floor((center.y + radius) / cellSize).toInt()
+
+    for (x in minCellX..maxCellX) {
+        for (y in minCellY..maxCellY) {
+            val key = (x.toLong() shl 32) xor (y.toLong() and 0xffffffffL)
+            val cellObstacles = index.buckets[key] ?: continue
+            for (obstacle in cellObstacles) {
+                val closestX = center.x.coerceIn(obstacle.left, obstacle.right)
+                val closestY = center.y.coerceIn(obstacle.top, obstacle.bottom)
+                val dx = center.x - closestX
+                val dy = center.y - closestY
+                if (dx * dx + dy * dy < radius * radius) return true
+            }
+        }
+    }
+    return false
+}
+
+private fun buildObstacleIndex(obstacles: List<ObstacleRect>, cellSize: Float): ObstacleIndex? {
+    if (obstacles.isEmpty() || cellSize <= 0f) return null
+    val buckets = mutableMapOf<Long, MutableList<ObstacleRect>>()
+    obstacles.forEach { obstacle ->
+        val minCellX = kotlin.math.floor(obstacle.left / cellSize).toInt()
+        val maxCellX = kotlin.math.floor(obstacle.right / cellSize).toInt()
+        val minCellY = kotlin.math.floor(obstacle.top / cellSize).toInt()
+        val maxCellY = kotlin.math.floor(obstacle.bottom / cellSize).toInt()
+        for (x in minCellX..maxCellX) {
+            for (y in minCellY..maxCellY) {
+                val key = (x.toLong() shl 32) xor (y.toLong() and 0xffffffffL)
+                buckets.getOrPut(key) { mutableListOf() }.add(obstacle)
+            }
+        }
+    }
+    return ObstacleIndex(cellSize = cellSize, buckets = buckets)
+}
 
 private fun buildLetterObstacles(worldSize: Size, viewportSize: Size): List<ObstacleRect> {
     val glyphs = mapOf(
