@@ -25,6 +25,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -237,19 +238,23 @@ fun AmoebaGame() {
         eaterPortalStates = emptyMap()
     }
 
-    DisposableEffect(lifecycleOwner, blobPos, foods, vacuoleProgress, consumedFoodId, moveHeading, nextFoodId) {
+    val latestSnapshot by rememberUpdatedState(
+        GameSnapshot(
+            blobPos = blobPos,
+            foods = foods,
+            vacuoleProgress = vacuoleProgress,
+            consumedFoodId = consumedFoodId,
+            moveHeading = moveHeading,
+            nextFoodId = nextFoodId
+        )
+    )
+
+    DisposableEffect(lifecycleOwner) {
         val observer = object : DefaultLifecycleObserver {
             override fun onPause(owner: LifecycleOwner) {
                 saveSnapshot(
                     context = context,
-                    snapshot = GameSnapshot(
-                        blobPos = blobPos,
-                        foods = foods,
-                        vacuoleProgress = vacuoleProgress,
-                        consumedFoodId = consumedFoodId,
-                        moveHeading = moveHeading,
-                        nextFoodId = nextFoodId
-                    )
+                    snapshot = latestSnapshot
                 )
             }
         }
@@ -757,7 +762,7 @@ fun AmoebaGame() {
                 padding = botRadius
             )
             val isStuck = (moved - bot.position).getDistance() < 0.2f
-            if (isStuck) {
+            val botAfterMove = if (isStuck) {
                 val randomAngle = Random.nextFloat() * 2f * PI.toFloat()
                 val escapeHeading = Offset(cos(randomAngle), sin(randomAngle))
                 val escaped = moveWithSliding(
@@ -772,21 +777,32 @@ fun AmoebaGame() {
             } else {
                 bot.copy(position = moved, heading = botDirection, color = bot.color)
             }
-        }.map { bot ->
-            val zapped = jellyfish.any { (it.position - bot.position).getDistance() < botRadius + jellyRadius * 0.62f }
+            var nearestJellyPos: Offset? = null
+            var nearestJellyDistSq = Float.MAX_VALUE
+            for (jelly in jellyfish) {
+                val dx = jelly.position.x - botAfterMove.position.x
+                val dy = jelly.position.y - botAfterMove.position.y
+                val distSq = dx * dx + dy * dy
+                if (distSq < nearestJellyDistSq) {
+                    nearestJellyDistSq = distSq
+                    nearestJellyPos = jelly.position
+                }
+            }
+            val zapRadius = botRadius + jellyRadius * 0.62f
+            val zapped = nearestJellyDistSq < zapRadius * zapRadius
             val newShock = if (zapped) 1f else (bot.shockTimer - 0.03f).coerceAtLeast(0f)
-            if (zapped) {
-                val away = (bot.position - jellyfish.minByOrNull { (it.position - bot.position).getDistance() }!!.position).normalized()
+            if (zapped && nearestJellyPos != null) {
+                val away = (botAfterMove.position - nearestJellyPos!!).normalized()
                 val pushed = moveWithSliding(
-                    current = bot.position,
+                    current = botAfterMove.position,
                     velocity = away * (speed * 3.2f),
                     radius = botRadius,
                     obstacles = obstacles,
                     worldSize = worldSize,
                     padding = botRadius
                 )
-                bot.copy(position = pushed, shockTimer = newShock)
-            } else bot.copy(shockTimer = newShock)
+                botAfterMove.copy(position = pushed, shockTimer = newShock)
+            } else botAfterMove.copy(shockTimer = newShock)
         }
 
         val foodsToRemoveByBots = mutableSetOf<Long>()
