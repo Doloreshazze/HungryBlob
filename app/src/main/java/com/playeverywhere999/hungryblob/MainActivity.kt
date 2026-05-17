@@ -826,35 +826,6 @@ fun AmoebaGame() {
             }
         }
 
-        val splitReadyBots = bots.filter { it.foodCount >= 10 }
-        if (splitReadyBots.isNotEmpty() && bots.size < BOT_AMOEBA_COUNT) {
-            val availableSlots = BOT_AMOEBA_COUNT - bots.size
-            val parentsToSplit = splitReadyBots.take(availableSlots)
-            val parentIds = parentsToSplit.map { it.id }.toSet()
-            val nextBotIdStart = (bots.maxOfOrNull { it.id } ?: 0) + 1
-            val spawnedBots = parentsToSplit.mapIndexed { idx, parent ->
-                val splitDir = if (parent.heading.getDistance() > 0.001f) parent.heading else Offset(1f, 0f)
-                BotAmoeba(
-                    id = nextBotIdStart + idx,
-                    position = moveWithSliding(
-                        current = parent.position,
-                        velocity = splitDir * (blobRadius * 2.2f),
-                        radius = botRadius,
-                        obstacles = obstacles,
-                        worldSize = worldSize,
-                        padding = botRadius
-                    ),
-                    heading = splitDir,
-                    color = parent.color,
-                    vacuoleProgress = 1f,
-                    foodCount = 0
-                )
-            }
-            bots = bots.map { bot ->
-                if (bot.id in parentIds) bot.copy(foodCount = bot.foodCount - 10) else bot
-            } + spawnedBots
-        }
-
         if (foodsToRemoveByBots.isNotEmpty()) {
             foods = foods.filterNot { it.id in foodsToRemoveByBots } + List(foodsToRemoveByBots.size) {
                 FoodParticle(
