@@ -1162,13 +1162,14 @@ fun AmoebaGame() {
             drawSplitCelebration(blobPos - cameraTopLeft, blobRadius * (1f + splitEventTimer), splitEventTimer, morphProgress)
         }
         val progress = ((playerFoodCount % 10) / 10f).coerceIn(0f, 1f)
+        val hudTopOffset = 124f
         drawFoodGauge(
-            topLeft = Offset(16f, 16f),
+            topLeft = Offset(16f, hudTopOffset),
             size = Size(150f, 22f),
             progress = progress
         )
         drawBotCountGauge(
-            topLeft = Offset(16f, 78f),
+            topLeft = Offset(16f, hudTopOffset + 62f),
             size = Size(150f, 22f),
             botCount = bots.size,
             maxBotCount = BOT_AMOEBA_COUNT
