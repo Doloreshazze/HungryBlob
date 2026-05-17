@@ -109,6 +109,7 @@ private const val BOT_SOFT_REPEL_RANGE_FACTOR = 1.85f
 private const val BOT_SOFT_REPEL_STRENGTH = 0.14f
 private const val BOT_PREDATOR_AVOID_RANGE_FACTOR = 6.4f
 private const val BOT_PREDATOR_AVOID_STRENGTH = 1.15f
+private const val BOT_PREDATOR_MAX_SAMPLES = 2
 private const val FOOD_CAPTURE_RADIUS_FACTOR = 1.1f
 private const val GAME_PREFS = "hungry_blob_save"
 private const val GAME_STATE_KEY = "state_v2"
@@ -428,19 +429,30 @@ fun AmoebaGame() {
         if (amoebaEaters.isEmpty()) {
             val spawnDistance = blobRadius * 3.5f
             val spawnPadding = blobRadius * 1.2f
+            val eaterRadius = blobRadius * 1.05f
             val nearSpawnCenter = Offset(
                 x = blobPos.x.coerceIn(spawnPadding + spawnDistance, worldSize.width - spawnPadding - spawnDistance),
                 y = blobPos.y.coerceIn(spawnPadding + spawnDistance, worldSize.height - spawnPadding - spawnDistance)
             )
             amoebaEaters = List(AMOEBA_EATER_COUNT) { idx ->
                 val angle = (idx.toFloat() / AMOEBA_EATER_COUNT.toFloat()) * 2f * PI.toFloat()
+                val preferredSpawn = Offset(
+                    x = nearSpawnCenter.x + cos(angle).toFloat() * spawnDistance,
+                    y = nearSpawnCenter.y + sin(angle).toFloat() * spawnDistance
+                )
+                val safeSpawn = if (collidesWithObstacles(preferredSpawn, eaterRadius, obstacles)) {
+                    randomFoodPosition(
+                        worldSize = worldSize,
+                        padding = eaterRadius,
+                        blobPos = blobPos,
+                        minDistanceFromBlob = blobRadius * 2.4f,
+                        obstacles = obstacles
+                    )
+                } else preferredSpawn
                 AmoebaEater(
                     id = idx,
                     // TODO: Удалить перед релизом: для тестирования спавним хищников рядом с игроком.
-                    position = Offset(
-                        x = nearSpawnCenter.x + cos(angle).toFloat() * spawnDistance,
-                        y = nearSpawnCenter.y + sin(angle).toFloat() * spawnDistance
-                    ),
+                    position = safeSpawn,
                     heading = Offset(cos(angle), sin(angle)),
                     type = PredatorType.entries[idx % PredatorType.entries.size]
                 )
@@ -601,20 +613,28 @@ fun AmoebaGame() {
         }
 
         val botVisionRange = botRadius * 8f
+        val botVisionRangeSq = botVisionRange * botVisionRange
         bots = bots.map { bot ->
-            val nearbyFoods = foods
-                .asSequence()
-                .map { it to (it.position - bot.position).getDistance() }
-                .filter { it.second <= botVisionRange }
-                .sortedBy { it.second }
-                .take(6)
-                .map { it.first }
-                .toList()
-            val visibleFoods = nearbyFoods.filter { hasLineOfSight(bot.position, it.position, obstacles) }
-            val nearest = visibleFoods
-                .filterNot { isFoodInWorldCorner(it.position, foodRadius, worldSize, blobRadius) }
-                .ifEmpty { visibleFoods }
-                .minByOrNull { (it.position - bot.position).getDistance() }
+            var nearestVisible: FoodParticle? = null
+            var nearestVisibleDistSq = Float.MAX_VALUE
+            var nearestNonCornerVisible: FoodParticle? = null
+            var nearestNonCornerVisibleDistSq = Float.MAX_VALUE
+            for (food in foods) {
+                val dx = food.position.x - bot.position.x
+                val dy = food.position.y - bot.position.y
+                val distSq = dx * dx + dy * dy
+                if (distSq <= botVisionRangeSq && hasLineOfSight(bot.position, food.position, obstacles)) {
+                    if (distSq < nearestVisibleDistSq) {
+                        nearestVisible = food
+                        nearestVisibleDistSq = distSq
+                    }
+                    if (!isFoodInWorldCorner(food.position, foodRadius, worldSize, blobRadius) && distSq < nearestNonCornerVisibleDistSq) {
+                        nearestNonCornerVisible = food
+                        nearestNonCornerVisibleDistSq = distSq
+                    }
+                }
+            }
+            val nearest = nearestNonCornerVisible ?: nearestVisible
             val chaseDirection = if (nearest != null) {
                 val toFood = nearest.position - bot.position
                 val dist = toFood.getDistance()
@@ -636,27 +656,41 @@ fun AmoebaGame() {
                     } else acc
                 }
             }
-            val predatorAvoidRange = botRadius * BOT_PREDATOR_AVOID_RANGE_FACTOR
-            val predatorAvoidRangeSq = predatorAvoidRange * predatorAvoidRange
-            var nearestDx = 0f
-            var nearestDy = 0f
-            var nearestDistSq = Float.MAX_VALUE
-            for (predator in amoebaEaters) {
-                val dx = bot.position.x - predator.position.x
-                val dy = bot.position.y - predator.position.y
-                val distSq = dx * dx + dy * dy
-                if (distSq in 0.000001f..predatorAvoidRangeSq && distSq < nearestDistSq) {
-                    nearestDistSq = distSq
-                    nearestDx = dx
-                    nearestDy = dy
+            val botScreenPos = bot.position - cameraTopLeft
+            val isBotVisibleToPlayer =
+                botScreenPos.x >= -botRadius &&
+                    botScreenPos.x <= viewportSize.width + botRadius &&
+                    botScreenPos.y >= -botRadius &&
+                    botScreenPos.y <= viewportSize.height + botRadius
+            var predatorThreat = 0f
+            var predatorAvoidForce = Offset.Zero
+            if (isBotVisibleToPlayer) {
+                val predatorAvoidRange = botRadius * BOT_PREDATOR_AVOID_RANGE_FACTOR
+                val predatorAvoidRangeSq = predatorAvoidRange * predatorAvoidRange
+                var nearestPredatorDistanceSq = Float.MAX_VALUE
+                var sampledPredators = 0
+                for (predator in amoebaEaters) {
+                    val dx = bot.position.x - predator.position.x
+                    val dy = bot.position.y - predator.position.y
+                    val distSq = dx * dx + dy * dy
+                    if (distSq > 0.000001f && distSq < predatorAvoidRangeSq) {
+                        nearestPredatorDistanceSq = min(nearestPredatorDistanceSq, distSq)
+                        val invDistance = 1f / sqrt(distSq)
+                        val threat = (1f - distSq / predatorAvoidRangeSq).coerceIn(0f, 1f)
+                        predatorAvoidForce += Offset(dx * invDistance, dy * invDistance) * (threat * BOT_PREDATOR_AVOID_STRENGTH)
+                        sampledPredators++
+                        if (sampledPredators >= BOT_PREDATOR_MAX_SAMPLES) break
+                    }
+                }
+                predatorThreat = if (nearestPredatorDistanceSq == Float.MAX_VALUE) {
+                    0f
+                } else {
+                    (1f - nearestPredatorDistanceSq / predatorAvoidRangeSq).coerceIn(0f, 1f)
                 }
             }
-            val predatorAvoidForce = if (nearestDistSq != Float.MAX_VALUE) {
-                val distance = sqrt(nearestDistSq)
-                val strength = ((predatorAvoidRange - distance) / predatorAvoidRange) * BOT_PREDATOR_AVOID_STRENGTH
-                Offset(nearestDx / distance, nearestDy / distance) * strength
-            } else Offset.Zero
-            val botDirection = (chaseDirection + repelForce + predatorAvoidForce).normalized().let {
+            val foodFocus = (1f - predatorThreat * 0.65f).coerceIn(0.35f, 1f)
+            val steering = (chaseDirection * foodFocus) + repelForce + predatorAvoidForce
+            val botDirection = steering.normalized().let {
                 if (it.getDistance() > 0.001f) it else chaseDirection
             }
             val botSpeed = speed * 0.88f
@@ -773,21 +807,11 @@ fun AmoebaGame() {
         var playerControlPenalty = 0f
         var stingerPlayerBites = 0
         val predatorVisionRange = (blobRadius * 1.05f) * 10f
+        val predatorVisionRangeSq = predatorVisionRange * predatorVisionRange
         amoebaEaters = amoebaEaters.map { eater ->
             val isFleeing = eater.type == PredatorType.STINGER &&
                 eater.satiatedTimer > 0f &&
                 eater.retreatDirection.getDistance() > 0.001f
-            val nearbyBots = bots
-                .takeIf { !isFleeing }
-                ?.asSequence()
-                ?.map { it to (it.position - eater.position).getDistance() }
-                ?.filter { it.second <= predatorVisionRange }
-                ?.sortedBy { it.second }
-                ?.take(5)
-                ?.map { it.first }
-                ?.toList()
-                ?: emptyList()
-            val visibleBots = if (isFleeing) emptyList() else nearbyBots.filter { hasLineOfSight(eater.position, it.position, obstacles) }
             val visiblePlayer = if (isFleeing) {
                 false
             } else {
@@ -795,9 +819,20 @@ fun AmoebaGame() {
                     (blobPos - eater.position).getDistance() <= predatorVisionRange &&
                     hasLineOfSight(eater.position, blobPos, obstacles)
             }
-            val preyPos = visibleBots.minByOrNull { (it.position - eater.position).getDistance() }?.position
-                ?: if (visiblePlayer) blobPos else null
-                ?: eater.position
+            var nearestVisibleBotPos: Offset? = null
+            var nearestVisibleBotDistSq = Float.MAX_VALUE
+            if (!isFleeing) {
+                for (bot in bots) {
+                    val dx = bot.position.x - eater.position.x
+                    val dy = bot.position.y - eater.position.y
+                    val distSq = dx * dx + dy * dy
+                    if (distSq <= predatorVisionRangeSq && distSq < nearestVisibleBotDistSq && hasLineOfSight(eater.position, bot.position, obstacles)) {
+                        nearestVisibleBotDistSq = distSq
+                        nearestVisibleBotPos = bot.position
+                    }
+                }
+            }
+            val preyPos = nearestVisibleBotPos ?: if (visiblePlayer) blobPos else eater.position
             val pursuit = (preyPos - eater.position).normalized().let { if (it.getDistance() > 0.001f) it else eater.heading }
             val localSpeed = when (eater.type) {
                 PredatorType.TENTACLE -> speed * 0.7f
