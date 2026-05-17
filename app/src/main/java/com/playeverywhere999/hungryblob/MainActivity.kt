@@ -67,6 +67,7 @@ private data class FoodParticle(
 )
 private data class ObstacleRect(val left: Float, val top: Float, val right: Float, val bottom: Float)
 private data class ObstacleBounds(val left: Float, val top: Float, val right: Float, val bottom: Float)
+private data class ObstacleIndex(val cellSize: Float, val buckets: Map<Long, List<ObstacleRect>>)
 private data class BotAmoeba(
     val id: Int,
     val position: Offset,
@@ -280,8 +281,9 @@ fun AmoebaGame() {
         val viewportSize = size
         val worldSize = Size(viewportSize.width * 10f, viewportSize.height * 4f)
         val obstacles = buildLetterObstacles(worldSize, viewportSize)
-        val obstacleBounds = obstacleBounds(obstacles)
         val blobRadius = min(viewportSize.width, viewportSize.height) * 0.09f
+        val obstacleBounds = obstacleBounds(obstacles)
+        val obstacleIndex = buildObstacleIndex(obstacles, blobRadius * 1.1f)
         val movementPadding = blobRadius * 0.5f
         val portalRadius = blobRadius * 0.85f
 
@@ -557,7 +559,8 @@ fun AmoebaGame() {
                     center = clamped,
                     radius = foodRadius,
                     obstacles = obstacles,
-                    bounds = obstacleBounds
+                    bounds = obstacleBounds,
+                    index = obstacleIndex
                 )
                 val nextPosition = if (blockedByLetter) food.position else clamped
                 val nextVelocity = if (blockedByLetter) worldBounced * -0.45f else worldBounced
@@ -1574,13 +1577,50 @@ private fun collidesWithObstaclesFast(
     center: Offset,
     radius: Float,
     obstacles: List<ObstacleRect>,
-    bounds: ObstacleBounds?
+    bounds: ObstacleBounds?,
+    index: ObstacleIndex?
 ): Boolean {
     if (bounds == null) return false
     if (center.x + radius < bounds.left || center.x - radius > bounds.right || center.y + radius < bounds.top || center.y - radius > bounds.bottom) {
         return false
     }
-    return collidesWithObstacles(center, radius, obstacles)
+    val nearby = nearbyObstacles(center, radius, index)
+    return collidesWithObstacles(center, radius, nearby ?: obstacles)
+}
+
+private fun buildObstacleIndex(obstacles: List<ObstacleRect>, cellSize: Float): ObstacleIndex? {
+    if (obstacles.isEmpty() || cellSize <= 0f) return null
+    val buckets = mutableMapOf<Long, MutableList<ObstacleRect>>()
+    obstacles.forEach { obstacle ->
+        val minCellX = kotlin.math.floor(obstacle.left / cellSize).toInt()
+        val maxCellX = kotlin.math.floor(obstacle.right / cellSize).toInt()
+        val minCellY = kotlin.math.floor(obstacle.top / cellSize).toInt()
+        val maxCellY = kotlin.math.floor(obstacle.bottom / cellSize).toInt()
+        for (x in minCellX..maxCellX) {
+            for (y in minCellY..maxCellY) {
+                val key = (x.toLong() shl 32) xor (y.toLong() and 0xffffffffL)
+                buckets.getOrPut(key) { mutableListOf() }.add(obstacle)
+            }
+        }
+    }
+    return ObstacleIndex(cellSize = cellSize, buckets = buckets)
+}
+
+private fun nearbyObstacles(center: Offset, radius: Float, index: ObstacleIndex?): List<ObstacleRect>? {
+    if (index == null) return null
+    val cellSize = index.cellSize
+    val minCellX = kotlin.math.floor((center.x - radius) / cellSize).toInt()
+    val maxCellX = kotlin.math.floor((center.x + radius) / cellSize).toInt()
+    val minCellY = kotlin.math.floor((center.y - radius) / cellSize).toInt()
+    val maxCellY = kotlin.math.floor((center.y + radius) / cellSize).toInt()
+    val out = LinkedHashSet<ObstacleRect>()
+    for (x in minCellX..maxCellX) {
+        for (y in minCellY..maxCellY) {
+            val key = (x.toLong() shl 32) xor (y.toLong() and 0xffffffffL)
+            index.buckets[key]?.let { out.addAll(it) }
+        }
+    }
+    return out.toList()
 }
 
 private fun buildLetterObstacles(worldSize: Size, viewportSize: Size): List<ObstacleRect> {
