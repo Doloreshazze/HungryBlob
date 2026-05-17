@@ -66,6 +66,7 @@ private data class FoodParticle(
     val emoji: String
 )
 private data class ObstacleRect(val left: Float, val top: Float, val right: Float, val bottom: Float)
+private data class ObstacleBounds(val left: Float, val top: Float, val right: Float, val bottom: Float)
 private data class BotAmoeba(
     val id: Int,
     val position: Offset,
@@ -279,6 +280,7 @@ fun AmoebaGame() {
         val viewportSize = size
         val worldSize = Size(viewportSize.width * 10f, viewportSize.height * 4f)
         val obstacles = buildLetterObstacles(worldSize, viewportSize)
+        val obstacleBounds = obstacleBounds(obstacles)
         val blobRadius = min(viewportSize.width, viewportSize.height) * 0.09f
         val movementPadding = blobRadius * 0.5f
         val portalRadius = blobRadius * 0.85f
@@ -551,7 +553,12 @@ fun AmoebaGame() {
                 y = moved.y.coerceIn(foodRadius, worldSize.height - foodRadius)
             )
             if (IS_FAST_FOOD_PHYSICS_ENABLED) {
-                val blockedByLetter = collidesWithObstacles(clamped, foodRadius, obstacles)
+                val blockedByLetter = collidesWithObstaclesFast(
+                    center = clamped,
+                    radius = foodRadius,
+                    obstacles = obstacles,
+                    bounds = obstacleBounds
+                )
                 val nextPosition = if (blockedByLetter) food.position else clamped
                 val nextVelocity = if (blockedByLetter) worldBounced * -0.45f else worldBounced
                 val escapedCorner = escapeFoodFromWorldCorner(
@@ -1547,6 +1554,34 @@ private fun collidesWithObstacles(center: Offset, radius: Float, obstacles: List
         val dy = center.y - closestY
         dx * dx + dy * dy < radius * radius
     }
+
+private fun obstacleBounds(obstacles: List<ObstacleRect>): ObstacleBounds? {
+    if (obstacles.isEmpty()) return null
+    var left = Float.MAX_VALUE
+    var top = Float.MAX_VALUE
+    var right = Float.MIN_VALUE
+    var bottom = Float.MIN_VALUE
+    obstacles.forEach { obstacle ->
+        left = min(left, obstacle.left)
+        top = min(top, obstacle.top)
+        right = max(right, obstacle.right)
+        bottom = max(bottom, obstacle.bottom)
+    }
+    return ObstacleBounds(left = left, top = top, right = right, bottom = bottom)
+}
+
+private fun collidesWithObstaclesFast(
+    center: Offset,
+    radius: Float,
+    obstacles: List<ObstacleRect>,
+    bounds: ObstacleBounds?
+): Boolean {
+    if (bounds == null) return false
+    if (center.x + radius < bounds.left || center.x - radius > bounds.right || center.y + radius < bounds.top || center.y - radius > bounds.bottom) {
+        return false
+    }
+    return collidesWithObstacles(center, radius, obstacles)
+}
 
 private fun buildLetterObstacles(worldSize: Size, viewportSize: Size): List<ObstacleRect> {
     val glyphs = mapOf(
