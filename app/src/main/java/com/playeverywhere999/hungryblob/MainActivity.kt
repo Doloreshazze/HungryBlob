@@ -128,6 +128,7 @@ private const val GAME_STATE_KEY = "state_v2"
 private const val IS_PREDATOR_TEST_SPAWN_ENABLED = true
 // TODO: Удалить перед релизом: упрощенная физика еды для поиска причины тормозов.
 private const val IS_FAST_FOOD_PHYSICS_ENABLED = true
+private const val FAST_FOOD_PARTICLE_COUNT = 140
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -411,7 +412,11 @@ fun AmoebaGame() {
         val foodSpawnClearance = max(foodRadius, botRadius * 0.82f)
         val targetBotCount = if (IS_PREDATOR_TEST_SPAWN_ENABLED) 18 else BOT_AMOEBA_COUNT
         val targetJellyCount = if (IS_PREDATOR_TEST_SPAWN_ENABLED) 12 else POISON_JELLYFISH_COUNT
-        val targetFoodCount = if (IS_PREDATOR_TEST_SPAWN_ENABLED) 260 else FOOD_PARTICLE_COUNT
+        val targetFoodCount = when {
+            IS_FAST_FOOD_PHYSICS_ENABLED -> FAST_FOOD_PARTICLE_COUNT
+            IS_PREDATOR_TEST_SPAWN_ENABLED -> 260
+            else -> FOOD_PARTICLE_COUNT
+        }
 
         if (bots.isEmpty()) {
             bots = List(targetBotCount) { idx ->
