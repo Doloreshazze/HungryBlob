@@ -348,6 +348,25 @@ fun AmoebaGame() {
         val toTarget = boundedTarget?.minus(blobPos) ?: Offset.Zero
         val targetDistance = toTarget.getDistance()
         val direction = if (targetDistance > 0.001f) toTarget / targetDistance else moveHeading
+        val foodRadius = blobRadius * 0.25f
+        val botRadius = blobRadius
+        val jellyRadius = blobRadius * 0.9f
+        val foodSpawnClearance = max(foodRadius, botRadius * 0.82f)
+        val targetBotCount = when {
+            IS_FAST_FOOD_PHYSICS_ENABLED -> FAST_BOT_COUNT
+            IS_PREDATOR_TEST_SPAWN_ENABLED -> 18
+            else -> BOT_AMOEBA_COUNT
+        }
+        val targetJellyCount = when {
+            IS_FAST_FOOD_PHYSICS_ENABLED -> FAST_JELLYFISH_COUNT
+            IS_PREDATOR_TEST_SPAWN_ENABLED -> 12
+            else -> POISON_JELLYFISH_COUNT
+        }
+        val targetFoodCount = when {
+            IS_FAST_FOOD_PHYSICS_ENABLED -> FAST_FOOD_PARTICLE_COUNT
+            IS_PREDATOR_TEST_SPAWN_ENABLED -> 260
+            else -> FOOD_PARTICLE_COUNT
+        }
         val nearestFood = foods.minByOrNull { (it.position - blobPos).getDistance() }
         val candidateFoodToConsume = when {
             consumedFoodId != null -> foods.firstOrNull { it.id == consumedFoodId }
@@ -421,26 +440,6 @@ fun AmoebaGame() {
                 )
                 reachedFood = true
             }
-
-        val foodRadius = blobRadius * 0.25f
-        val botRadius = blobRadius
-        val jellyRadius = blobRadius * 0.9f
-        val foodSpawnClearance = max(foodRadius, botRadius * 0.82f)
-        val targetBotCount = when {
-            IS_FAST_FOOD_PHYSICS_ENABLED -> FAST_BOT_COUNT
-            IS_PREDATOR_TEST_SPAWN_ENABLED -> 18
-            else -> BOT_AMOEBA_COUNT
-        }
-        val targetJellyCount = when {
-            IS_FAST_FOOD_PHYSICS_ENABLED -> FAST_JELLYFISH_COUNT
-            IS_PREDATOR_TEST_SPAWN_ENABLED -> 12
-            else -> POISON_JELLYFISH_COUNT
-        }
-        val targetFoodCount = when {
-            IS_FAST_FOOD_PHYSICS_ENABLED -> FAST_FOOD_PARTICLE_COUNT
-            IS_PREDATOR_TEST_SPAWN_ENABLED -> 260
-            else -> FOOD_PARTICLE_COUNT
-        }
 
         if (bots.isEmpty()) {
             bots = List(targetBotCount) { idx ->
