@@ -1128,6 +1128,24 @@ fun AmoebaGame() {
                 )
             }
         }
+        fun drawSleepingEyes(center: Offset, radius: Float) {
+            val eyeOffsetX = radius * 0.25f
+            val eyeY = center.y - radius * 0.08f
+            val eyeHalfWidth = radius * 0.13f
+            val eyeStroke = radius * 0.06f
+            drawLine(
+                color = Color(0xFF10131A),
+                start = Offset(center.x - eyeOffsetX - eyeHalfWidth, eyeY),
+                end = Offset(center.x - eyeOffsetX + eyeHalfWidth, eyeY),
+                strokeWidth = eyeStroke
+            )
+            drawLine(
+                color = Color(0xFF10131A),
+                start = Offset(center.x + eyeOffsetX - eyeHalfWidth, eyeY),
+                end = Offset(center.x + eyeOffsetX + eyeHalfWidth, eyeY),
+                strokeWidth = eyeStroke
+            )
+        }
         foods.forEach { food ->
             val center = food.position - cameraTopLeft
             drawCircle(color = food.color.copy(alpha = 0.35f), radius = foodRadius, center = center)
@@ -1143,6 +1161,7 @@ fun AmoebaGame() {
             )
             if (isPaused && isInViewport(center, jellyRadius)) {
                 drawSleepAnimation(center, jellyRadius, morphProgress + jelly.driftPhase)
+                drawSleepingEyes(center, jellyRadius)
             }
         }
 
@@ -1169,6 +1188,7 @@ fun AmoebaGame() {
             )
             if (isPaused && isInViewport(center, blobRadius)) {
                 drawSleepAnimation(center, blobRadius, morphProgress + bot.id * 0.11f)
+                drawSleepingEyes(center, blobRadius)
             }
         }
 
@@ -1185,6 +1205,7 @@ fun AmoebaGame() {
             )
             if (isPaused && isInViewport(center, blobRadius * 1.05f)) {
                 drawSleepAnimation(center, blobRadius * 1.05f, morphProgress + eater.id * 0.13f)
+                drawSleepingEyes(center, blobRadius * 1.05f)
             }
         }
 
@@ -1211,6 +1232,7 @@ fun AmoebaGame() {
         )
         if (isPaused && isInViewport(playerCenter, blobRadius)) {
             drawSleepAnimation(playerCenter, blobRadius, morphProgress)
+            drawSleepingEyes(playerCenter, blobRadius)
         }
 
         if (splitEventTimer > 0f) {
