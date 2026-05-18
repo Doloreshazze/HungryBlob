@@ -423,6 +423,21 @@ fun AmoebaGame() {
                             foodCount = 0
                         )
                     }
+                    val evilHeadingAngle = Random.nextFloat() * 2f * PI.toFloat()
+                    val evilHeading = Offset(cos(evilHeadingAngle), sin(evilHeadingAngle))
+                    val evilSpawnRadius = blobRadius * 1.05f
+                    amoebaEaters = amoebaEaters + AmoebaEater(
+                        id = (amoebaEaters.maxOfOrNull { it.id } ?: -1) + 1,
+                        position = randomFoodPosition(
+                            worldSize = worldSize,
+                            padding = evilSpawnRadius + movementPadding,
+                            blobPos = blobPos,
+                            minDistanceFromBlob = blobRadius * 2.4f,
+                            obstacles = obstacles
+                        ),
+                        heading = evilHeading,
+                        type = PredatorType.EVIL_AMOEBA
+                    )
                 }
                 playerColor = candidateFoodToConsume.color
                 foods = foods.filterNot { it.id == candidateFoodToConsume.id } + FoodParticle(
