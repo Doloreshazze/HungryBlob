@@ -500,7 +500,7 @@ fun AmoebaGame() {
                             worldSize = worldSize,
                             padding = evilSpawnRadius + movementPadding,
                             blobPos = blobPos,
-                            minDistanceFromBlob = blobRadius * 2.4f,
+                            minDistanceFromBlob = blobRadius * 10f,
                             obstacles = obstacles
                         ),
                         heading = evilHeading,
@@ -566,7 +566,7 @@ fun AmoebaGame() {
 
 
         if (amoebaEaters.isEmpty()) {
-            val spawnDistance = blobRadius * 3.5f
+            val spawnDistance = blobRadius * 10f
             val spawnPadding = blobRadius * 1.2f
             val eaterRadius = blobRadius * 1.05f
             val nearSpawnCenter = Offset(
@@ -584,7 +584,7 @@ fun AmoebaGame() {
                         worldSize = worldSize,
                         padding = eaterRadius,
                         blobPos = blobPos,
-                        minDistanceFromBlob = blobRadius * 2.4f,
+                        minDistanceFromBlob = blobRadius * 10f,
                         obstacles = obstacles
                     )
                 } else preferredSpawn
