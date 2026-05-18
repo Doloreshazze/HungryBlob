@@ -54,6 +54,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Text
 import com.playeverywhere999.hungryblob.ui.theme.HungryBlobTheme
+import org.json.JSONArray
+import org.json.JSONObject
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.max
@@ -111,7 +113,10 @@ private data class GameSnapshot(
     val vacuoleProgress: Float,
     val consumedFoodId: Long?,
     val moveHeading: Offset,
-    val nextFoodId: Long
+    val nextFoodId: Long,
+    val playerColorArgb: Int,
+    val playerFoodCount: Int,
+    val nextSplitAt: Int
 )
 
 private const val FOOD_PARTICLE_COUNT = 440
@@ -175,7 +180,10 @@ fun AmoebaGame() {
             vacuoleProgress = 0f,
             consumedFoodId = null,
             moveHeading = Offset(1f, 0f),
-            nextFoodId = 1L
+            nextFoodId = 1L,
+            playerColorArgb = Color(0xFF83E7A0).toArgb(),
+            playerFoodCount = 0,
+            nextSplitAt = 10
         )
     val infiniteTransition = rememberInfiniteTransition(label = "amoeba")
     val morphProgress by infiniteTransition.animateFloat(
@@ -196,10 +204,10 @@ fun AmoebaGame() {
     var bots by remember { mutableStateOf(emptyList<BotAmoeba>()) }
     var jellyfish by remember { mutableStateOf(emptyList<PoisonJellyfish>()) }
     var shockTimer by remember { mutableStateOf(0f) }
-    var playerColor by remember { mutableStateOf(Color(0xFF83E7A0)) }
-    var playerFoodCount by remember { mutableStateOf(0) }
+    var playerColor by remember { mutableStateOf(Color(initialSnapshot.playerColorArgb)) }
+    var playerFoodCount by remember { mutableStateOf(initialSnapshot.playerFoodCount) }
     var splitEventTimer by remember { mutableStateOf(0f) }
-    var nextSplitAt by remember { mutableStateOf(10) }
+    var nextSplitAt by remember { mutableStateOf(initialSnapshot.nextSplitAt) }
     var amoebaEaters by remember { mutableStateOf(emptyList<AmoebaEater>()) }
     var playerRespawnTimer by remember { mutableStateOf(0f) }
     var portals by remember { mutableStateOf(emptyList<TeleportPortal>()) }
@@ -249,7 +257,10 @@ fun AmoebaGame() {
             vacuoleProgress = vacuoleProgress,
             consumedFoodId = consumedFoodId,
             moveHeading = moveHeading,
-            nextFoodId = nextFoodId
+            nextFoodId = nextFoodId,
+            playerColorArgb = playerColor.toArgb(),
+            playerFoodCount = playerFoodCount,
+            nextSplitAt = nextSplitAt
         )
     )
 
@@ -1907,63 +1918,69 @@ fun AmoebaGamePreview() {
 }
 
 private fun saveSnapshot(context: android.content.Context, snapshot: GameSnapshot) {
-    val foodsEncoded = snapshot.foods.joinToString(";") { food ->
-        listOf(
-            food.id,
-            food.position.x,
-            food.position.y,
-            food.velocity.x,
-            food.velocity.y,
-            food.color.toArgb(),
-            food.emoji
-        ).joinToString(",")
+    val root = JSONObject().apply {
+        put("blobX", snapshot.blobPos.x.toDouble())
+        put("blobY", snapshot.blobPos.y.toDouble())
+        put("vacuole", snapshot.vacuoleProgress.toDouble())
+        put("consumedFoodId", snapshot.consumedFoodId)
+        put("headingX", snapshot.moveHeading.x.toDouble())
+        put("headingY", snapshot.moveHeading.y.toDouble())
+        put("nextFoodId", snapshot.nextFoodId)
+        put("playerColorArgb", snapshot.playerColorArgb)
+        put("playerFoodCount", snapshot.playerFoodCount)
+        put("nextSplitAt", snapshot.nextSplitAt)
+        put("foods", JSONArray().apply {
+            snapshot.foods.forEach { food ->
+                put(JSONObject().apply {
+                    put("id", food.id)
+                    put("x", food.position.x.toDouble())
+                    put("y", food.position.y.toDouble())
+                    put("vx", food.velocity.x.toDouble())
+                    put("vy", food.velocity.y.toDouble())
+                    put("color", food.color.toArgb())
+                    put("emoji", food.emoji)
+                })
+            }
+        })
     }
-    val header = listOf(
-        snapshot.blobPos.x,
-        snapshot.blobPos.y,
-        snapshot.vacuoleProgress,
-        snapshot.consumedFoodId ?: -1L,
-        snapshot.moveHeading.x,
-        snapshot.moveHeading.y,
-        snapshot.nextFoodId
-    ).joinToString("|")
 
     context.getSharedPreferences(GAME_PREFS, android.content.Context.MODE_PRIVATE)
         .edit()
-        .putString(GAME_STATE_KEY, "$header#$foodsEncoded")
+        .putString(GAME_STATE_KEY, root.toString())
         .apply()
 }
 
 private fun loadSnapshot(context: android.content.Context): GameSnapshot? {
     val raw = context.getSharedPreferences(GAME_PREFS, android.content.Context.MODE_PRIVATE).getString(GAME_STATE_KEY, null)
         ?: return null
-    val split = raw.split("#", limit = 2)
-    if (split.size != 2) return null
-
-    val header = split[0].split("|")
-    if (header.size != 7) return null
 
     return runCatching {
-        val blobPos = Offset(header[0].toFloat(), header[1].toFloat())
-        val vacuole = header[2].toFloat()
-        val consumed = header[3].toLong().let { if (it >= 0L) it else null }
-        val heading = Offset(header[4].toFloat(), header[5].toFloat())
-        val nextFoodId = header[6].toLong()
-        val foods = if (split[1].isBlank()) {
-            emptyList()
-        } else {
-            split[1].split(';').mapNotNull { token ->
-                val parts = token.split(',')
-                if (parts.size !in setOf(5, 6, 7)) return@mapNotNull null
-                FoodParticle(
-                    id = parts[0].toLong(),
-                    position = Offset(parts[1].toFloat(), parts[2].toFloat()),
-                    velocity = Offset(parts[3].toFloat(), parts[4].toFloat()),
-                    color = if (parts.size >= 6) Color(parts[5].toInt()) else randomFoodColor(),
-                    emoji = if (parts.size >= 7) parts[6] else randomFoodEmoji()
+        val json = JSONObject(raw)
+        val foodsJson = json.optJSONArray("foods") ?: JSONArray()
+        val foods = buildList {
+            for (i in 0 until foodsJson.length()) {
+                val item = foodsJson.optJSONObject(i) ?: continue
+                add(
+                    FoodParticle(
+                        id = item.getLong("id"),
+                        position = Offset(item.getDouble("x").toFloat(), item.getDouble("y").toFloat()),
+                        velocity = Offset(item.getDouble("vx").toFloat(), item.getDouble("vy").toFloat()),
+                        color = Color(item.getInt("color")),
+                        emoji = item.optString("emoji", randomFoodEmoji())
+                    )
                 )
             }
         }
-        GameSnapshot(blobPos, foods, vacuole, consumed, heading, nextFoodId)
+        GameSnapshot(
+            blobPos = Offset(json.getDouble("blobX").toFloat(), json.getDouble("blobY").toFloat()),
+            foods = foods,
+            vacuoleProgress = json.getDouble("vacuole").toFloat(),
+            consumedFoodId = if (json.has("consumedFoodId") && !json.isNull("consumedFoodId")) json.getLong("consumedFoodId") else null,
+            moveHeading = Offset(json.getDouble("headingX").toFloat(), json.getDouble("headingY").toFloat()),
+            nextFoodId = json.getLong("nextFoodId"),
+            playerColorArgb = json.optInt("playerColorArgb", Color(0xFF83E7A0).toArgb()),
+            playerFoodCount = json.optInt("playerFoodCount", 0),
+            nextSplitAt = json.optInt("nextSplitAt", 10)
+        )
     }.getOrNull()
 }
