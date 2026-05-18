@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -212,6 +213,7 @@ fun AmoebaGame() {
     var cachedObstacles by remember { mutableStateOf(emptyList<ObstacleRect>()) }
     var cachedObstacleBounds by remember { mutableStateOf<ObstacleBounds?>(null) }
     var cachedObstacleIndex by remember { mutableStateOf<ObstacleIndex?>(null) }
+    var topControlsHeightPx by remember { mutableStateOf(0) }
 
     val resetGame: () -> Unit = {
         blobPos = Offset(400f, 700f)
@@ -1162,13 +1164,14 @@ fun AmoebaGame() {
             drawSplitCelebration(blobPos - cameraTopLeft, blobRadius * (1f + splitEventTimer), splitEventTimer, morphProgress)
         }
         val progress = ((playerFoodCount % 10) / 10f).coerceIn(0f, 1f)
+        val hudTopOffset = topControlsHeightPx.toFloat() + with(density) { 12.dp.toPx() }
         drawFoodGauge(
-            topLeft = Offset(16f, 16f),
+            topLeft = Offset(16f, hudTopOffset),
             size = Size(150f, 22f),
             progress = progress
         )
         drawBotCountGauge(
-            topLeft = Offset(16f, 78f),
+            topLeft = Offset(16f, hudTopOffset + 62f),
             size = Size(150f, 22f),
             botCount = bots.size,
             maxBotCount = BOT_AMOEBA_COUNT
@@ -1180,6 +1183,7 @@ fun AmoebaGame() {
             modifier = Modifier
                 .statusBarsPadding()
                 .padding(12.dp)
+                .onSizeChanged { topControlsHeightPx = it.height }
         ) {
             Button(
                 onClick = { isMusicEnabled = !isMusicEnabled },
