@@ -1098,6 +1098,36 @@ fun AmoebaGame() {
             textSize = foodRadius * 2.2f
             isAntiAlias = true
         }
+        val sleepPaint = Paint().apply {
+            textAlign = Paint.Align.CENTER
+            isAntiAlias = true
+            color = Color(0xFFE8F4FF).toArgb()
+            setShadowLayer(blobRadius * 0.2f, 0f, blobRadius * 0.06f, Color(0xAA000000).toArgb())
+        }
+        fun isInViewport(center: Offset, radius: Float): Boolean {
+            return center.x >= -radius &&
+                center.x <= viewportSize.width + radius &&
+                center.y >= -radius &&
+                center.y <= viewportSize.height + radius
+        }
+        fun drawSleepAnimation(center: Offset, radius: Float, phase: Float) {
+            val drift = ((sin(phase * 2f * PI.toFloat()) + 1f) * 0.5f)
+            val baseY = center.y - radius * (1.3f + drift * 0.2f)
+            val baseX = center.x + radius * (0.55f + drift * 0.08f)
+            val sizes = listOf(0.36f, 0.29f, 0.22f)
+            sizes.forEachIndexed { index, scale ->
+                val zPhase = (phase + index * 0.17f) % 1f
+                val alpha = (0.48f + 0.52f * sin(zPhase * 2f * PI.toFloat())).coerceIn(0.25f, 1f)
+                sleepPaint.alpha = (alpha * 255).toInt()
+                sleepPaint.textSize = radius * scale
+                drawContext.canvas.nativeCanvas.drawText(
+                    "Z",
+                    baseX + index * radius * 0.25f,
+                    baseY - index * radius * 0.2f,
+                    sleepPaint
+                )
+            }
+        }
         foods.forEach { food ->
             val center = food.position - cameraTopLeft
             drawCircle(color = food.color.copy(alpha = 0.35f), radius = foodRadius, center = center)
@@ -1105,16 +1135,21 @@ fun AmoebaGame() {
         }
 
         jellyfish.forEach { jelly ->
+            val center = jelly.position - cameraTopLeft
             drawPoisonJellyfish(
-                center = jelly.position - cameraTopLeft,
+                center = center,
                 radius = jellyRadius,
                 phase = morphProgress + jelly.driftPhase
             )
+            if (isPaused && isInViewport(center, jellyRadius)) {
+                drawSleepAnimation(center, jellyRadius, morphProgress + jelly.driftPhase)
+            }
         }
 
         bots.forEach { bot ->
+            val center = bot.position - cameraTopLeft
             drawAmoebaBody(
-                center = bot.position - cameraTopLeft,
+                center = center,
                 baseRadius = blobRadius,
                 morphProgress = (morphProgress + bot.id * 0.17f) % 1f,
                 direction = bot.heading,
@@ -1124,7 +1159,7 @@ fun AmoebaGame() {
                 bodyColor = bot.color
             )
             drawEyes(
-                center = bot.position - cameraTopLeft,
+                center = center,
                 radius = blobRadius,
                 direction = bot.heading,
                 spinning = bot.consumedFoodId != null || bot.vacuoleProgress > 0f,
@@ -1132,11 +1167,15 @@ fun AmoebaGame() {
                 shocked = bot.shockTimer > 0f,
                 shockStrength = bot.shockTimer
             )
+            if (isPaused && isInViewport(center, blobRadius)) {
+                drawSleepAnimation(center, blobRadius, morphProgress + bot.id * 0.11f)
+            }
         }
 
         amoebaEaters.forEach { eater ->
+            val center = eater.position - cameraTopLeft
             drawAmoebaEater(
-                center = eater.position - cameraTopLeft,
+                center = center,
                 radius = blobRadius * 1.05f,
                 direction = eater.heading,
                 phase = morphProgress + eater.chompPhase,
@@ -1144,11 +1183,15 @@ fun AmoebaGame() {
                 shocked = eater.shockTimer > 0f,
                 shockStrength = eater.shockTimer
             )
+            if (isPaused && isInViewport(center, blobRadius * 1.05f)) {
+                drawSleepAnimation(center, blobRadius * 1.05f, morphProgress + eater.id * 0.13f)
+            }
         }
 
+        val playerCenter = blobPos - cameraTopLeft
         val consumedFoodScreenPos = candidateFoodToConsume?.position?.minus(cameraTopLeft)
         drawAmoebaBody(
-            center = blobPos - cameraTopLeft,
+            center = playerCenter,
             baseRadius = blobRadius,
             morphProgress = morphProgress,
             direction = direction,
@@ -1158,7 +1201,7 @@ fun AmoebaGame() {
             bodyColor = playerColor
         )
         drawEyes(
-            center = blobPos - cameraTopLeft,
+            center = playerCenter,
             radius = blobRadius,
             direction = direction,
             spinning = reachedFood || vacuoleProgress > 0f,
@@ -1166,6 +1209,9 @@ fun AmoebaGame() {
             shocked = shockTimer > 0f,
             shockStrength = shockTimer
         )
+        if (isPaused && isInViewport(playerCenter, blobRadius)) {
+            drawSleepAnimation(playerCenter, blobRadius, morphProgress)
+        }
 
         if (splitEventTimer > 0f) {
             drawSplitCelebration(blobPos - cameraTopLeft, blobRadius * (1f + splitEventTimer), splitEventTimer, morphProgress)
