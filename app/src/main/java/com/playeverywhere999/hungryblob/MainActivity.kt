@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -260,10 +261,30 @@ fun AmoebaGame() {
                     snapshot = latestSnapshot
                 )
             }
+
+            override fun onStop(owner: LifecycleOwner) {
+                saveSnapshot(
+                    context = context,
+                    snapshot = latestSnapshot
+                )
+            }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
+            saveSnapshot(
+                context = context,
+                snapshot = latestSnapshot
+            )
             lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
+    LaunchedEffect(isPaused) {
+        if (isPaused) {
+            saveSnapshot(
+                context = context,
+                snapshot = latestSnapshot
+            )
         }
     }
 
