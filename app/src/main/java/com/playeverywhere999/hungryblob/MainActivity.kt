@@ -214,6 +214,7 @@ fun AmoebaGame() {
     var cachedObstacleBounds by remember { mutableStateOf<ObstacleBounds?>(null) }
     var cachedObstacleIndex by remember { mutableStateOf<ObstacleIndex?>(null) }
     var topControlsHeightPx by remember { mutableStateOf(0) }
+    var isPaused by remember { mutableStateOf(false) }
 
     val resetGame: () -> Unit = {
         blobPos = Offset(400f, 700f)
@@ -273,16 +274,22 @@ fun AmoebaGame() {
                 .background(Color(0xFF071923))
                 .pointerInput(Unit) {
                     detectTapGestures { tap ->
-                        moveTarget = tap + cameraTopLeft
+                        if (!isPaused) {
+                            moveTarget = tap + cameraTopLeft
+                        }
                     }
                 }
                 .pointerInput(Unit) {
                     detectDragGestures(
                         onDragStart = { touch ->
-                            moveTarget = touch + cameraTopLeft
+                            if (!isPaused) {
+                                moveTarget = touch + cameraTopLeft
+                            }
                         },
                         onDrag = { change, _ ->
-                            moveTarget = change.position + cameraTopLeft
+                            if (!isPaused) {
+                                moveTarget = change.position + cameraTopLeft
+                            }
                         },
                         onDragEnd = {
                             moveTarget = null
@@ -293,7 +300,7 @@ fun AmoebaGame() {
                     )
                 }
         ) {
-        val speed = with(density) { 2.5f }
+        val speed = if (isPaused) 0f else with(density) { 2.5f }
         val viewportSize = size
         val worldSize = Size(viewportSize.width * 10f, viewportSize.height * 4f)
         val blobRadius = min(viewportSize.width, viewportSize.height) * 0.09f
@@ -341,80 +348,6 @@ fun AmoebaGame() {
         val toTarget = boundedTarget?.minus(blobPos) ?: Offset.Zero
         val targetDistance = toTarget.getDistance()
         val direction = if (targetDistance > 0.001f) toTarget / targetDistance else moveHeading
-
-        val alive = playerRespawnTimer <= 0f
-        if (alive && boundedTarget != null && targetDistance > speed) {
-            moveHeading = direction
-            blobPos = moveWithSliding(
-                current = blobPos,
-                velocity = moveHeading * speed,
-                radius = blobRadius * 0.75f,
-                obstacles = obstacles,
-                worldSize = worldSize,
-                padding = movementPadding
-            )
-        } else if (alive && boundedTarget != null) {
-            blobPos = boundedTarget
-            moveTarget = null
-        } else if (alive) {
-            val drift = if (moveHeading.getDistance() > 0.001f) moveHeading.normalized() else Offset.Zero
-            blobPos = moveWithSliding(
-                current = blobPos,
-                velocity = drift * speed,
-                radius = blobRadius * 0.75f,
-                obstacles = obstacles,
-                worldSize = worldSize,
-                padding = movementPadding
-            )
-        }
-
-        val nearestFood = foods.minByOrNull { (it.position - blobPos).getDistance() }
-        val candidateFoodToConsume = when {
-            consumedFoodId != null -> foods.firstOrNull { it.id == consumedFoodId }
-            nearestFood != null && (nearestFood.position - blobPos).getDistance() < blobRadius * FOOD_CAPTURE_RADIUS_FACTOR -> nearestFood
-            else -> null
-        }
-
-        if (candidateFoodToConsume == null) {
-            vacuoleProgress = (vacuoleProgress - 0.04f).coerceAtLeast(0f)
-            consumedFoodId = null
-        } else {
-            consumedFoodId = null
-            vacuoleProgress = 1f
-            playerFoodCount += 1
-            if (playerFoodCount >= nextSplitAt) {
-                nextSplitAt += 10
-                splitEventTimer = 1f
-                if (bots.size < BOT_AMOEBA_COUNT) {
-                    val splitDir = Offset(cos(morphProgress * 2f * PI.toFloat()), sin(morphProgress * 2f * PI.toFloat())).normalized()
-                    bots = bots + BotAmoeba(
-                        id = (bots.maxOfOrNull { it.id } ?: 0) + 1,
-                        position = moveWithSliding(blobPos, splitDir * (blobRadius * 2.4f), blobRadius, obstacles, worldSize, blobRadius),
-                        heading = splitDir,
-                        color = botColor(Random.nextInt(BOT_AMOEBA_COUNT)),
-                        vacuoleProgress = 1f,
-                        foodCount = 0
-                    )
-                }
-            }
-            playerColor = candidateFoodToConsume.color
-            foods = foods.filterNot { it.id == candidateFoodToConsume.id } + FoodParticle(
-                id = nextFoodId++,
-                position = randomFoodPosition(
-                    worldSize = worldSize,
-                    padding = max(blobRadius * 0.25f, blobRadius * 0.82f),
-                    blobPos = blobPos,
-                    minDistanceFromBlob = min(worldSize.width, worldSize.height) * 0.35f,
-                    obstacles = obstacles
-                ),
-                velocity = Offset.Zero,
-                color = randomFoodColor(),
-                emoji = randomFoodEmoji()
-            )
-        }
-
-        val reachedFood = candidateFoodToConsume != null
-
         val foodRadius = blobRadius * 0.25f
         val botRadius = blobRadius
         val jellyRadius = blobRadius * 0.9f
@@ -434,6 +367,79 @@ fun AmoebaGame() {
             IS_PREDATOR_TEST_SPAWN_ENABLED -> 260
             else -> FOOD_PARTICLE_COUNT
         }
+        val nearestFood = foods.minByOrNull { (it.position - blobPos).getDistance() }
+        val candidateFoodToConsume = when {
+            consumedFoodId != null -> foods.firstOrNull { it.id == consumedFoodId }
+            nearestFood != null && (nearestFood.position - blobPos).getDistance() < blobRadius * FOOD_CAPTURE_RADIUS_FACTOR -> nearestFood
+            else -> null
+        }
+        var reachedFood = candidateFoodToConsume != null
+
+        if (!isPaused) {
+            val alive = playerRespawnTimer <= 0f
+            if (alive && boundedTarget != null && targetDistance > speed) {
+                moveHeading = direction
+                blobPos = moveWithSliding(
+                    current = blobPos,
+                    velocity = moveHeading * speed,
+                    radius = blobRadius * 0.75f,
+                    obstacles = obstacles,
+                    worldSize = worldSize,
+                    padding = movementPadding
+                )
+            } else if (alive && boundedTarget != null) {
+                blobPos = boundedTarget
+                moveTarget = null
+            } else if (alive) {
+                val drift = if (moveHeading.getDistance() > 0.001f) moveHeading.normalized() else Offset.Zero
+                blobPos = moveWithSliding(
+                    current = blobPos,
+                    velocity = drift * speed,
+                    radius = blobRadius * 0.75f,
+                    obstacles = obstacles,
+                    worldSize = worldSize,
+                    padding = movementPadding
+                )
+            }
+
+            if (candidateFoodToConsume == null) {
+                vacuoleProgress = (vacuoleProgress - 0.04f).coerceAtLeast(0f)
+                consumedFoodId = null
+            } else {
+                consumedFoodId = null
+                vacuoleProgress = 1f
+                playerFoodCount += 1
+                if (playerFoodCount >= nextSplitAt) {
+                    nextSplitAt += 10
+                    splitEventTimer = 1f
+                    if (bots.size < BOT_AMOEBA_COUNT) {
+                        val splitDir = Offset(cos(morphProgress * 2f * PI.toFloat()), sin(morphProgress * 2f * PI.toFloat())).normalized()
+                        bots = bots + BotAmoeba(
+                            id = (bots.maxOfOrNull { it.id } ?: 0) + 1,
+                            position = moveWithSliding(blobPos, splitDir * (blobRadius * 2.4f), blobRadius, obstacles, worldSize, blobRadius),
+                            heading = splitDir,
+                            color = botColor(Random.nextInt(BOT_AMOEBA_COUNT)),
+                            vacuoleProgress = 1f,
+                            foodCount = 0
+                        )
+                    }
+                }
+                playerColor = candidateFoodToConsume.color
+                foods = foods.filterNot { it.id == candidateFoodToConsume.id } + FoodParticle(
+                    id = nextFoodId++,
+                    position = randomFoodPosition(
+                        worldSize = worldSize,
+                        padding = max(blobRadius * 0.25f, blobRadius * 0.82f),
+                        blobPos = blobPos,
+                        minDistanceFromBlob = min(worldSize.width, worldSize.height) * 0.35f,
+                        obstacles = obstacles
+                    ),
+                    velocity = Offset.Zero,
+                    color = randomFoodColor(),
+                    emoji = randomFoodEmoji()
+                )
+                reachedFood = true
+            }
 
         if (bots.isEmpty()) {
             bots = List(targetBotCount) { idx ->
@@ -1063,6 +1069,7 @@ fun AmoebaGame() {
         eaterPortalStates = updatedEaterStates.filterKeys { id -> amoebaEaters.any { it.id == id } }
 
         splitEventTimer = (splitEventTimer - 0.02f).coerceAtLeast(0f)
+        }
 
         obstacles.forEach { obstacle ->
             drawRect(
@@ -1091,6 +1098,54 @@ fun AmoebaGame() {
             textSize = foodRadius * 2.2f
             isAntiAlias = true
         }
+        val sleepPaint = Paint().apply {
+            textAlign = Paint.Align.CENTER
+            isAntiAlias = true
+            color = Color(0xFFE8F4FF).toArgb()
+            setShadowLayer(blobRadius * 0.2f, 0f, blobRadius * 0.06f, Color(0xAA000000).toArgb())
+        }
+        fun isInViewport(center: Offset, radius: Float): Boolean {
+            return center.x >= -radius &&
+                center.x <= viewportSize.width + radius &&
+                center.y >= -radius &&
+                center.y <= viewportSize.height + radius
+        }
+        fun drawSleepAnimation(center: Offset, radius: Float, phase: Float) {
+            val drift = ((sin(phase * 2f * PI.toFloat()) + 1f) * 0.5f)
+            val baseY = center.y - radius * (1.3f + drift * 0.2f)
+            val baseX = center.x + radius * (0.55f + drift * 0.08f)
+            val sizes = listOf(0.36f, 0.29f, 0.22f)
+            sizes.forEachIndexed { index, scale ->
+                val zPhase = (phase + index * 0.17f) % 1f
+                val alpha = (0.48f + 0.52f * sin(zPhase * 2f * PI.toFloat())).coerceIn(0.25f, 1f)
+                sleepPaint.alpha = (alpha * 255).toInt()
+                sleepPaint.textSize = radius * scale
+                drawContext.canvas.nativeCanvas.drawText(
+                    "Z",
+                    baseX + index * radius * 0.25f,
+                    baseY - index * radius * 0.2f,
+                    sleepPaint
+                )
+            }
+        }
+        fun drawSleepingEyes(center: Offset, radius: Float) {
+            val eyeOffsetX = radius * 0.25f
+            val eyeY = center.y - radius * 0.08f
+            val eyeHalfWidth = radius * 0.13f
+            val eyeStroke = radius * 0.06f
+            drawLine(
+                color = Color(0xFF10131A),
+                start = Offset(center.x - eyeOffsetX - eyeHalfWidth, eyeY),
+                end = Offset(center.x - eyeOffsetX + eyeHalfWidth, eyeY),
+                strokeWidth = eyeStroke
+            )
+            drawLine(
+                color = Color(0xFF10131A),
+                start = Offset(center.x + eyeOffsetX - eyeHalfWidth, eyeY),
+                end = Offset(center.x + eyeOffsetX + eyeHalfWidth, eyeY),
+                strokeWidth = eyeStroke
+            )
+        }
         foods.forEach { food ->
             val center = food.position - cameraTopLeft
             drawCircle(color = food.color.copy(alpha = 0.35f), radius = foodRadius, center = center)
@@ -1098,16 +1153,24 @@ fun AmoebaGame() {
         }
 
         jellyfish.forEach { jelly ->
+            val center = jelly.position - cameraTopLeft
+            val sleeping = isPaused && isInViewport(center, jellyRadius)
             drawPoisonJellyfish(
-                center = jelly.position - cameraTopLeft,
+                center = center,
                 radius = jellyRadius,
-                phase = morphProgress + jelly.driftPhase
+                phase = morphProgress + jelly.driftPhase,
+                sleeping = sleeping
             )
+            if (sleeping) {
+                drawSleepAnimation(center, jellyRadius, morphProgress + jelly.driftPhase)
+            }
         }
 
         bots.forEach { bot ->
+            val center = bot.position - cameraTopLeft
+            val sleeping = isPaused && isInViewport(center, blobRadius)
             drawAmoebaBody(
-                center = bot.position - cameraTopLeft,
+                center = center,
                 baseRadius = blobRadius,
                 morphProgress = (morphProgress + bot.id * 0.17f) % 1f,
                 direction = bot.heading,
@@ -1116,32 +1179,44 @@ fun AmoebaGame() {
                 engulfProgress = bot.vacuoleProgress,
                 bodyColor = bot.color
             )
-            drawEyes(
-                center = bot.position - cameraTopLeft,
-                radius = blobRadius,
-                direction = bot.heading,
-                spinning = bot.consumedFoodId != null || bot.vacuoleProgress > 0f,
-                spinPhase = morphProgress,
-                shocked = bot.shockTimer > 0f,
-                shockStrength = bot.shockTimer
-            )
+            if (!sleeping) {
+                drawEyes(
+                    center = center,
+                    radius = blobRadius,
+                    direction = bot.heading,
+                    spinning = bot.consumedFoodId != null || bot.vacuoleProgress > 0f,
+                    spinPhase = morphProgress,
+                    shocked = bot.shockTimer > 0f,
+                    shockStrength = bot.shockTimer
+                )
+            } else {
+                drawSleepAnimation(center, blobRadius, morphProgress + bot.id * 0.11f)
+                drawSleepingEyes(center, blobRadius)
+            }
         }
 
         amoebaEaters.forEach { eater ->
+            val center = eater.position - cameraTopLeft
+            val sleeping = isPaused && isInViewport(center, blobRadius * 1.05f)
             drawAmoebaEater(
-                center = eater.position - cameraTopLeft,
+                center = center,
                 radius = blobRadius * 1.05f,
                 direction = eater.heading,
                 phase = morphProgress + eater.chompPhase,
                 type = eater.type,
                 shocked = eater.shockTimer > 0f,
-                shockStrength = eater.shockTimer
+                shockStrength = eater.shockTimer,
+                sleeping = sleeping
             )
+            if (sleeping) {
+                drawSleepAnimation(center, blobRadius * 1.05f, morphProgress + eater.id * 0.13f)
+            }
         }
 
+        val playerCenter = blobPos - cameraTopLeft
         val consumedFoodScreenPos = candidateFoodToConsume?.position?.minus(cameraTopLeft)
         drawAmoebaBody(
-            center = blobPos - cameraTopLeft,
+            center = playerCenter,
             baseRadius = blobRadius,
             morphProgress = morphProgress,
             direction = direction,
@@ -1150,15 +1225,21 @@ fun AmoebaGame() {
             engulfProgress = vacuoleProgress,
             bodyColor = playerColor
         )
-        drawEyes(
-            center = blobPos - cameraTopLeft,
-            radius = blobRadius,
-            direction = direction,
-            spinning = reachedFood || vacuoleProgress > 0f,
-            spinPhase = morphProgress,
-            shocked = shockTimer > 0f,
-            shockStrength = shockTimer
-        )
+        val playerSleeping = isPaused && isInViewport(playerCenter, blobRadius)
+        if (!playerSleeping) {
+            drawEyes(
+                center = playerCenter,
+                radius = blobRadius,
+                direction = direction,
+                spinning = reachedFood || vacuoleProgress > 0f,
+                spinPhase = morphProgress,
+                shocked = shockTimer > 0f,
+                shockStrength = shockTimer
+            )
+        } else {
+            drawSleepAnimation(playerCenter, blobRadius, morphProgress)
+            drawSleepingEyes(playerCenter, blobRadius)
+        }
 
         if (splitEventTimer > 0f) {
             drawSplitCelebration(blobPos - cameraTopLeft, blobRadius * (1f + splitEventTimer), splitEventTimer, morphProgress)
@@ -1192,6 +1273,18 @@ fun AmoebaGame() {
                 )
             ) {
                 Text(if (isMusicEnabled) "🔊" else "🔇")
+            }
+            Button(
+                modifier = Modifier.padding(start = 8.dp),
+                onClick = {
+                    isPaused = !isPaused
+                    if (isPaused) moveTarget = null
+                },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color.White.copy(alpha = 0.22f)
+                )
+            ) {
+                Text(if (isPaused) "▶" else "⏸")
             }
             Button(
                 modifier = Modifier.padding(start = 8.dp),
@@ -1340,7 +1433,7 @@ private fun DrawScope.drawAmoebaBody(
     drawPath(path = path, color = bodyColor)
 }
 
-private fun DrawScope.drawPoisonJellyfish(center: Offset, radius: Float, phase: Float) {
+private fun DrawScope.drawPoisonJellyfish(center: Offset, radius: Float, phase: Float, sleeping: Boolean = false) {
     val domeColor = Color(0xCCB06CFF)
     val tentacleColor = Color(0xEE9A57E6)
     val eyeRadius = radius * 0.16f
@@ -1355,6 +1448,12 @@ private fun DrawScope.drawPoisonJellyfish(center: Offset, radius: Float, phase: 
     }
 
     val eyeCenter = center + Offset(0f, -radius * 0.06f)
+    if (sleeping) {
+        val eyeHalfWidth = eyeRadius * 0.8f
+        val eyeY = eyeCenter.y
+        drawLine(Color(0xFF230E3E), Offset(eyeCenter.x - eyeHalfWidth, eyeY), Offset(eyeCenter.x + eyeHalfWidth, eyeY), radius * 0.05f)
+        return
+    }
     val blinkWave = sin(phase * 2f * PI.toFloat() * 0.85f).toFloat()
     val blinkAmount = if (blinkWave > 0.93f) ((blinkWave - 0.93f) / 0.07f).coerceIn(0f, 1f) else 0f
     val eyeOpen = (1f - blinkAmount).coerceIn(0.08f, 1f)
@@ -1391,7 +1490,8 @@ private fun DrawScope.drawAmoebaEater(
     phase: Float,
     type: PredatorType,
     shocked: Boolean = false,
-    shockStrength: Float = 0f
+    shockStrength: Float = 0f,
+    sleeping: Boolean = false
 ) {
     val facing = if (direction.getDistance() > 0.001f) direction else Offset(1f, 0f)
     val side = Offset(-facing.y, facing.x)
@@ -1420,6 +1520,13 @@ private fun DrawScope.drawAmoebaEater(
     val leftEyeCenter = center + facing * (radius * 0.3f) + side * (radius * 0.18f)
     val rightEyeCenter = center + facing * (radius * 0.3f) - side * (radius * 0.18f)
     val eyeRadius = radius * 0.12f
+    if (sleeping) {
+        val eyeHalfWidth = eyeRadius * 0.9f
+        val eyeStroke = radius * 0.06f
+        drawLine(Color(0xFF10131A), leftEyeCenter + Offset(-eyeHalfWidth, 0f), leftEyeCenter + Offset(eyeHalfWidth, 0f), eyeStroke)
+        drawLine(Color(0xFF10131A), rightEyeCenter + Offset(-eyeHalfWidth, 0f), rightEyeCenter + Offset(eyeHalfWidth, 0f), eyeStroke)
+        return
+    }
     drawCircle(Color.White, eyeRadius, leftEyeCenter)
     drawCircle(Color.White, eyeRadius, rightEyeCenter)
 
