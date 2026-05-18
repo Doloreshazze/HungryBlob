@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -53,6 +54,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Text
 import com.playeverywhere999.hungryblob.ui.theme.HungryBlobTheme
+import org.json.JSONArray
+import org.json.JSONObject
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.max
@@ -110,7 +113,22 @@ private data class GameSnapshot(
     val vacuoleProgress: Float,
     val consumedFoodId: Long?,
     val moveHeading: Offset,
-    val nextFoodId: Long
+    val nextFoodId: Long,
+    val playerColorArgb: Int,
+    val playerFoodCount: Int,
+    val nextSplitAt: Int,
+    val bots: List<BotAmoeba>,
+    val jellyfish: List<PoisonJellyfish>,
+    val amoebaEaters: List<AmoebaEater>,
+    val portals: List<TeleportPortal>,
+    val shockTimer: Float,
+    val playerRespawnTimer: Float,
+    val playerInsidePortal: Boolean,
+    val botPortalStates: Map<Int, Boolean>,
+    val jellyPortalStates: Map<Int, Boolean>,
+    val eaterPortalStates: Map<Int, Boolean>,
+    val updateFoodThisFrame: Boolean,
+    val isPaused: Boolean
 )
 
 private const val FOOD_PARTICLE_COUNT = 440
@@ -174,7 +192,22 @@ fun AmoebaGame() {
             vacuoleProgress = 0f,
             consumedFoodId = null,
             moveHeading = Offset(1f, 0f),
-            nextFoodId = 1L
+            nextFoodId = 1L,
+            playerColorArgb = Color(0xFF83E7A0).toArgb(),
+            playerFoodCount = 0,
+            nextSplitAt = 10,
+            bots = emptyList(),
+            jellyfish = emptyList(),
+            amoebaEaters = emptyList(),
+            portals = emptyList(),
+            shockTimer = 0f,
+            playerRespawnTimer = 0f,
+            playerInsidePortal = false,
+            botPortalStates = emptyMap(),
+            jellyPortalStates = emptyMap(),
+            eaterPortalStates = emptyMap(),
+            updateFoodThisFrame = true,
+            isPaused = false
         )
     val infiniteTransition = rememberInfiniteTransition(label = "amoeba")
     val morphProgress by infiniteTransition.animateFloat(
@@ -192,29 +225,29 @@ fun AmoebaGame() {
     var moveTarget by remember { mutableStateOf<Offset?>(null) }
     var moveHeading by remember { mutableStateOf(initialSnapshot.moveHeading) }
     var nextFoodId by remember { mutableStateOf(initialSnapshot.nextFoodId) }
-    var bots by remember { mutableStateOf(emptyList<BotAmoeba>()) }
-    var jellyfish by remember { mutableStateOf(emptyList<PoisonJellyfish>()) }
-    var shockTimer by remember { mutableStateOf(0f) }
-    var playerColor by remember { mutableStateOf(Color(0xFF83E7A0)) }
-    var playerFoodCount by remember { mutableStateOf(0) }
+    var bots by remember { mutableStateOf(initialSnapshot.bots) }
+    var jellyfish by remember { mutableStateOf(initialSnapshot.jellyfish) }
+    var shockTimer by remember { mutableStateOf(initialSnapshot.shockTimer) }
+    var playerColor by remember { mutableStateOf(Color(initialSnapshot.playerColorArgb)) }
+    var playerFoodCount by remember { mutableStateOf(initialSnapshot.playerFoodCount) }
     var splitEventTimer by remember { mutableStateOf(0f) }
-    var nextSplitAt by remember { mutableStateOf(10) }
-    var amoebaEaters by remember { mutableStateOf(emptyList<AmoebaEater>()) }
-    var playerRespawnTimer by remember { mutableStateOf(0f) }
-    var portals by remember { mutableStateOf(emptyList<TeleportPortal>()) }
-    var playerInsidePortal by remember { mutableStateOf(false) }
-    var botPortalStates by remember { mutableStateOf<Map<Int, Boolean>>(emptyMap()) }
-    var jellyPortalStates by remember { mutableStateOf<Map<Int, Boolean>>(emptyMap()) }
-    var eaterPortalStates by remember { mutableStateOf<Map<Int, Boolean>>(emptyMap()) }
+    var nextSplitAt by remember { mutableStateOf(initialSnapshot.nextSplitAt) }
+    var amoebaEaters by remember { mutableStateOf(initialSnapshot.amoebaEaters) }
+    var playerRespawnTimer by remember { mutableStateOf(initialSnapshot.playerRespawnTimer) }
+    var portals by remember { mutableStateOf(initialSnapshot.portals) }
+    var playerInsidePortal by remember { mutableStateOf(initialSnapshot.playerInsidePortal) }
+    var botPortalStates by remember { mutableStateOf(initialSnapshot.botPortalStates) }
+    var jellyPortalStates by remember { mutableStateOf(initialSnapshot.jellyPortalStates) }
+    var eaterPortalStates by remember { mutableStateOf(initialSnapshot.eaterPortalStates) }
     var isMusicEnabled by remember { mutableStateOf(true) }
-    var updateFoodThisFrame by remember { mutableStateOf(true) }
+    var updateFoodThisFrame by remember { mutableStateOf(initialSnapshot.updateFoodThisFrame) }
     var cachedViewportSize by remember { mutableStateOf(IntSize.Zero) }
     var cachedWorldSize by remember { mutableStateOf(Size.Zero) }
     var cachedObstacles by remember { mutableStateOf(emptyList<ObstacleRect>()) }
     var cachedObstacleBounds by remember { mutableStateOf<ObstacleBounds?>(null) }
     var cachedObstacleIndex by remember { mutableStateOf<ObstacleIndex?>(null) }
     var topControlsHeightPx by remember { mutableStateOf(0) }
-    var isPaused by remember { mutableStateOf(false) }
+    var isPaused by remember { mutableStateOf(initialSnapshot.isPaused) }
 
     val resetGame: () -> Unit = {
         blobPos = Offset(400f, 700f)
@@ -248,7 +281,22 @@ fun AmoebaGame() {
             vacuoleProgress = vacuoleProgress,
             consumedFoodId = consumedFoodId,
             moveHeading = moveHeading,
-            nextFoodId = nextFoodId
+            nextFoodId = nextFoodId,
+            playerColorArgb = playerColor.toArgb(),
+            playerFoodCount = playerFoodCount,
+            nextSplitAt = nextSplitAt,
+            bots = bots,
+            jellyfish = jellyfish,
+            amoebaEaters = amoebaEaters,
+            portals = portals,
+            shockTimer = shockTimer,
+            playerRespawnTimer = playerRespawnTimer,
+            playerInsidePortal = playerInsidePortal,
+            botPortalStates = botPortalStates,
+            jellyPortalStates = jellyPortalStates,
+            eaterPortalStates = eaterPortalStates,
+            updateFoodThisFrame = updateFoodThisFrame,
+            isPaused = isPaused
         )
     )
 
@@ -260,10 +308,30 @@ fun AmoebaGame() {
                     snapshot = latestSnapshot
                 )
             }
+
+            override fun onStop(owner: LifecycleOwner) {
+                saveSnapshot(
+                    context = context,
+                    snapshot = latestSnapshot
+                )
+            }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
+            saveSnapshot(
+                context = context,
+                snapshot = latestSnapshot
+            )
             lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
+    LaunchedEffect(isPaused) {
+        if (isPaused) {
+            saveSnapshot(
+                context = context,
+                snapshot = latestSnapshot
+            )
         }
     }
 
@@ -1886,63 +1954,218 @@ fun AmoebaGamePreview() {
 }
 
 private fun saveSnapshot(context: android.content.Context, snapshot: GameSnapshot) {
-    val foodsEncoded = snapshot.foods.joinToString(";") { food ->
-        listOf(
-            food.id,
-            food.position.x,
-            food.position.y,
-            food.velocity.x,
-            food.velocity.y,
-            food.color.toArgb(),
-            food.emoji
-        ).joinToString(",")
+    val root = JSONObject().apply {
+        put("blobX", snapshot.blobPos.x.toDouble())
+        put("blobY", snapshot.blobPos.y.toDouble())
+        put("vacuole", snapshot.vacuoleProgress.toDouble())
+        put("consumedFoodId", snapshot.consumedFoodId)
+        put("headingX", snapshot.moveHeading.x.toDouble())
+        put("headingY", snapshot.moveHeading.y.toDouble())
+        put("nextFoodId", snapshot.nextFoodId)
+        put("playerColorArgb", snapshot.playerColorArgb)
+        put("playerFoodCount", snapshot.playerFoodCount)
+        put("nextSplitAt", snapshot.nextSplitAt)
+        put("shockTimer", snapshot.shockTimer.toDouble())
+        put("playerRespawnTimer", snapshot.playerRespawnTimer.toDouble())
+        put("playerInsidePortal", snapshot.playerInsidePortal)
+        put("updateFoodThisFrame", snapshot.updateFoodThisFrame)
+        put("isPaused", snapshot.isPaused)
+        put("botPortalStates", JSONObject().apply {
+            snapshot.botPortalStates.forEach { (key, value) -> put(key.toString(), value) }
+        })
+        put("jellyPortalStates", JSONObject().apply {
+            snapshot.jellyPortalStates.forEach { (key, value) -> put(key.toString(), value) }
+        })
+        put("eaterPortalStates", JSONObject().apply {
+            snapshot.eaterPortalStates.forEach { (key, value) -> put(key.toString(), value) }
+        })
+        put("foods", JSONArray().apply {
+            snapshot.foods.forEach { food ->
+                put(JSONObject().apply {
+                    put("id", food.id)
+                    put("x", food.position.x.toDouble())
+                    put("y", food.position.y.toDouble())
+                    put("vx", food.velocity.x.toDouble())
+                    put("vy", food.velocity.y.toDouble())
+                    put("color", food.color.toArgb())
+                    put("emoji", food.emoji)
+                })
+            }
+        })
+        put("bots", JSONArray().apply {
+            snapshot.bots.forEach { bot ->
+                put(JSONObject().apply {
+                    put("id", bot.id)
+                    put("x", bot.position.x.toDouble())
+                    put("y", bot.position.y.toDouble())
+                    put("hx", bot.heading.x.toDouble())
+                    put("hy", bot.heading.y.toDouble())
+                    put("color", bot.color.toArgb())
+                    put("consumedFoodId", bot.consumedFoodId)
+                    put("vacuole", bot.vacuoleProgress.toDouble())
+                    put("shock", bot.shockTimer.toDouble())
+                    put("foodCount", bot.foodCount)
+                })
+            }
+        })
+        put("jellyfish", JSONArray().apply {
+            snapshot.jellyfish.forEach { jelly ->
+                put(JSONObject().apply {
+                    put("id", jelly.id)
+                    put("x", jelly.position.x.toDouble())
+                    put("y", jelly.position.y.toDouble())
+                    put("vx", jelly.driftVelocity.x.toDouble())
+                    put("vy", jelly.driftVelocity.y.toDouble())
+                    put("phase", jelly.driftPhase.toDouble())
+                })
+            }
+        })
+        put("amoebaEaters", JSONArray().apply {
+            snapshot.amoebaEaters.forEach { eater ->
+                put(JSONObject().apply {
+                    put("id", eater.id)
+                    put("x", eater.position.x.toDouble())
+                    put("y", eater.position.y.toDouble())
+                    put("hx", eater.heading.x.toDouble())
+                    put("hy", eater.heading.y.toDouble())
+                    put("type", eater.type.name)
+                    put("chompPhase", eater.chompPhase.toDouble())
+                    put("attachTimer", eater.attachTimer.toDouble())
+                    put("disguiseTimer", eater.disguiseTimer.toDouble())
+                    put("attachedToPlayer", eater.attachedToPlayer)
+                    put("satiatedTimer", eater.satiatedTimer.toDouble())
+                    put("retreatX", eater.retreatDirection.x.toDouble())
+                    put("retreatY", eater.retreatDirection.y.toDouble())
+                    put("shockTimer", eater.shockTimer.toDouble())
+                })
+            }
+        })
+        put("portals", JSONArray().apply {
+            snapshot.portals.forEach { portal ->
+                put(JSONObject().apply {
+                    put("id", portal.id)
+                    put("x", portal.position.x.toDouble())
+                    put("y", portal.position.y.toDouble())
+                })
+            }
+        })
     }
-    val header = listOf(
-        snapshot.blobPos.x,
-        snapshot.blobPos.y,
-        snapshot.vacuoleProgress,
-        snapshot.consumedFoodId ?: -1L,
-        snapshot.moveHeading.x,
-        snapshot.moveHeading.y,
-        snapshot.nextFoodId
-    ).joinToString("|")
 
     context.getSharedPreferences(GAME_PREFS, android.content.Context.MODE_PRIVATE)
         .edit()
-        .putString(GAME_STATE_KEY, "$header#$foodsEncoded")
+        .putString(GAME_STATE_KEY, root.toString())
         .apply()
 }
 
 private fun loadSnapshot(context: android.content.Context): GameSnapshot? {
     val raw = context.getSharedPreferences(GAME_PREFS, android.content.Context.MODE_PRIVATE).getString(GAME_STATE_KEY, null)
         ?: return null
-    val split = raw.split("#", limit = 2)
-    if (split.size != 2) return null
-
-    val header = split[0].split("|")
-    if (header.size != 7) return null
 
     return runCatching {
-        val blobPos = Offset(header[0].toFloat(), header[1].toFloat())
-        val vacuole = header[2].toFloat()
-        val consumed = header[3].toLong().let { if (it >= 0L) it else null }
-        val heading = Offset(header[4].toFloat(), header[5].toFloat())
-        val nextFoodId = header[6].toLong()
-        val foods = if (split[1].isBlank()) {
-            emptyList()
-        } else {
-            split[1].split(';').mapNotNull { token ->
-                val parts = token.split(',')
-                if (parts.size !in setOf(5, 6, 7)) return@mapNotNull null
-                FoodParticle(
-                    id = parts[0].toLong(),
-                    position = Offset(parts[1].toFloat(), parts[2].toFloat()),
-                    velocity = Offset(parts[3].toFloat(), parts[4].toFloat()),
-                    color = if (parts.size >= 6) Color(parts[5].toInt()) else randomFoodColor(),
-                    emoji = if (parts.size >= 7) parts[6] else randomFoodEmoji()
+        val json = JSONObject(raw)
+        val foodsJson = json.optJSONArray("foods") ?: JSONArray()
+        val foods = buildList {
+            for (i in 0 until foodsJson.length()) {
+                val item = foodsJson.optJSONObject(i) ?: continue
+                add(
+                    FoodParticle(
+                        id = item.getLong("id"),
+                        position = Offset(item.getDouble("x").toFloat(), item.getDouble("y").toFloat()),
+                        velocity = Offset(item.getDouble("vx").toFloat(), item.getDouble("vy").toFloat()),
+                        color = Color(item.getInt("color")),
+                        emoji = item.optString("emoji", randomFoodEmoji())
+                    )
                 )
             }
         }
-        GameSnapshot(blobPos, foods, vacuole, consumed, heading, nextFoodId)
+        val bots = buildList {
+            val botsJson = json.optJSONArray("bots") ?: JSONArray()
+            for (i in 0 until botsJson.length()) {
+                val item = botsJson.optJSONObject(i) ?: continue
+                add(
+                    BotAmoeba(
+                        id = item.getInt("id"),
+                        position = Offset(item.getDouble("x").toFloat(), item.getDouble("y").toFloat()),
+                        heading = Offset(item.getDouble("hx").toFloat(), item.getDouble("hy").toFloat()),
+                        color = Color(item.getInt("color")),
+                        consumedFoodId = if (item.has("consumedFoodId") && !item.isNull("consumedFoodId")) item.getLong("consumedFoodId") else null,
+                        vacuoleProgress = item.optDouble("vacuole", 0.0).toFloat(),
+                        shockTimer = item.optDouble("shock", 0.0).toFloat(),
+                        foodCount = item.optInt("foodCount", 0)
+                    )
+                )
+            }
+        }
+        val jellyfish = buildList {
+            val jellyJson = json.optJSONArray("jellyfish") ?: JSONArray()
+            for (i in 0 until jellyJson.length()) {
+                val item = jellyJson.optJSONObject(i) ?: continue
+                add(
+                    PoisonJellyfish(
+                        id = item.getInt("id"),
+                        position = Offset(item.getDouble("x").toFloat(), item.getDouble("y").toFloat()),
+                        driftVelocity = Offset(item.getDouble("vx").toFloat(), item.getDouble("vy").toFloat()),
+                        driftPhase = item.optDouble("phase", 0.0).toFloat()
+                    )
+                )
+            }
+        }
+        val amoebaEaters = buildList {
+            val eatersJson = json.optJSONArray("amoebaEaters") ?: JSONArray()
+            for (i in 0 until eatersJson.length()) {
+                val item = eatersJson.optJSONObject(i) ?: continue
+                add(
+                    AmoebaEater(
+                        id = item.getInt("id"),
+                        position = Offset(item.getDouble("x").toFloat(), item.getDouble("y").toFloat()),
+                        heading = Offset(item.getDouble("hx").toFloat(), item.getDouble("hy").toFloat()),
+                        type = PredatorType.valueOf(item.optString("type", PredatorType.TENTACLE.name)),
+                        chompPhase = item.optDouble("chompPhase", 0.0).toFloat(),
+                        attachTimer = item.optDouble("attachTimer", 0.0).toFloat(),
+                        disguiseTimer = item.optDouble("disguiseTimer", 0.0).toFloat(),
+                        attachedToPlayer = item.optBoolean("attachedToPlayer", false),
+                        satiatedTimer = item.optDouble("satiatedTimer", 0.0).toFloat(),
+                        retreatDirection = Offset(item.optDouble("retreatX", 0.0).toFloat(), item.optDouble("retreatY", 0.0).toFloat()),
+                        shockTimer = item.optDouble("shockTimer", 0.0).toFloat()
+                    )
+                )
+            }
+        }
+        val portals = buildList {
+            val portalsJson = json.optJSONArray("portals") ?: JSONArray()
+            for (i in 0 until portalsJson.length()) {
+                val item = portalsJson.optJSONObject(i) ?: continue
+                add(TeleportPortal(item.getInt("id"), Offset(item.getDouble("x").toFloat(), item.getDouble("y").toFloat())))
+            }
+        }
+        fun parsePortalStates(name: String): Map<Int, Boolean> {
+            val obj = json.optJSONObject(name) ?: return emptyMap()
+            return obj.keys().asSequence().mapNotNull { key ->
+                key.toIntOrNull()?.let { it to obj.optBoolean(key, false) }
+            }.toMap()
+        }
+        GameSnapshot(
+            blobPos = Offset(json.getDouble("blobX").toFloat(), json.getDouble("blobY").toFloat()),
+            foods = foods,
+            vacuoleProgress = json.getDouble("vacuole").toFloat(),
+            consumedFoodId = if (json.has("consumedFoodId") && !json.isNull("consumedFoodId")) json.getLong("consumedFoodId") else null,
+            moveHeading = Offset(json.getDouble("headingX").toFloat(), json.getDouble("headingY").toFloat()),
+            nextFoodId = json.getLong("nextFoodId"),
+            playerColorArgb = json.optInt("playerColorArgb", Color(0xFF83E7A0).toArgb()),
+            playerFoodCount = json.optInt("playerFoodCount", 0),
+            nextSplitAt = json.optInt("nextSplitAt", 10),
+            bots = bots,
+            jellyfish = jellyfish,
+            amoebaEaters = amoebaEaters,
+            portals = portals,
+            shockTimer = json.optDouble("shockTimer", 0.0).toFloat(),
+            playerRespawnTimer = json.optDouble("playerRespawnTimer", 0.0).toFloat(),
+            playerInsidePortal = json.optBoolean("playerInsidePortal", false),
+            botPortalStates = parsePortalStates("botPortalStates"),
+            jellyPortalStates = parsePortalStates("jellyPortalStates"),
+            eaterPortalStates = parsePortalStates("eaterPortalStates"),
+            updateFoodThisFrame = json.optBoolean("updateFoodThisFrame", true),
+            isPaused = json.optBoolean("isPaused", false)
+        )
     }.getOrNull()
 }
