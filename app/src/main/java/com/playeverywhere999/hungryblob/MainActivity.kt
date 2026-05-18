@@ -348,79 +348,79 @@ fun AmoebaGame() {
         val toTarget = boundedTarget?.minus(blobPos) ?: Offset.Zero
         val targetDistance = toTarget.getDistance()
         val direction = if (targetDistance > 0.001f) toTarget / targetDistance else moveHeading
-
-        val alive = playerRespawnTimer <= 0f
-        if (alive && boundedTarget != null && targetDistance > speed) {
-            moveHeading = direction
-            blobPos = moveWithSliding(
-                current = blobPos,
-                velocity = moveHeading * speed,
-                radius = blobRadius * 0.75f,
-                obstacles = obstacles,
-                worldSize = worldSize,
-                padding = movementPadding
-            )
-        } else if (alive && boundedTarget != null) {
-            blobPos = boundedTarget
-            moveTarget = null
-        } else if (alive) {
-            val drift = if (moveHeading.getDistance() > 0.001f) moveHeading.normalized() else Offset.Zero
-            blobPos = moveWithSliding(
-                current = blobPos,
-                velocity = drift * speed,
-                radius = blobRadius * 0.75f,
-                obstacles = obstacles,
-                worldSize = worldSize,
-                padding = movementPadding
-            )
-        }
-
         val nearestFood = foods.minByOrNull { (it.position - blobPos).getDistance() }
         val candidateFoodToConsume = when {
             consumedFoodId != null -> foods.firstOrNull { it.id == consumedFoodId }
             nearestFood != null && (nearestFood.position - blobPos).getDistance() < blobRadius * FOOD_CAPTURE_RADIUS_FACTOR -> nearestFood
             else -> null
         }
+        var reachedFood = candidateFoodToConsume != null
 
-        if (candidateFoodToConsume == null) {
-            vacuoleProgress = (vacuoleProgress - 0.04f).coerceAtLeast(0f)
-            consumedFoodId = null
-        } else {
-            consumedFoodId = null
-            vacuoleProgress = 1f
-            playerFoodCount += 1
-            if (playerFoodCount >= nextSplitAt) {
-                nextSplitAt += 10
-                splitEventTimer = 1f
-                if (bots.size < BOT_AMOEBA_COUNT) {
-                    val splitDir = Offset(cos(morphProgress * 2f * PI.toFloat()), sin(morphProgress * 2f * PI.toFloat())).normalized()
-                    bots = bots + BotAmoeba(
-                        id = (bots.maxOfOrNull { it.id } ?: 0) + 1,
-                        position = moveWithSliding(blobPos, splitDir * (blobRadius * 2.4f), blobRadius, obstacles, worldSize, blobRadius),
-                        heading = splitDir,
-                        color = botColor(Random.nextInt(BOT_AMOEBA_COUNT)),
-                        vacuoleProgress = 1f,
-                        foodCount = 0
-                    )
-                }
-            }
-            playerColor = candidateFoodToConsume.color
-            foods = foods.filterNot { it.id == candidateFoodToConsume.id } + FoodParticle(
-                id = nextFoodId++,
-                position = randomFoodPosition(
+        if (!isPaused) {
+            val alive = playerRespawnTimer <= 0f
+            if (alive && boundedTarget != null && targetDistance > speed) {
+                moveHeading = direction
+                blobPos = moveWithSliding(
+                    current = blobPos,
+                    velocity = moveHeading * speed,
+                    radius = blobRadius * 0.75f,
+                    obstacles = obstacles,
                     worldSize = worldSize,
-                    padding = max(blobRadius * 0.25f, blobRadius * 0.82f),
-                    blobPos = blobPos,
-                    minDistanceFromBlob = min(worldSize.width, worldSize.height) * 0.35f,
-                    obstacles = obstacles
-                ),
-                velocity = Offset.Zero,
-                color = randomFoodColor(),
-                emoji = randomFoodEmoji()
-            )
-        }
+                    padding = movementPadding
+                )
+            } else if (alive && boundedTarget != null) {
+                blobPos = boundedTarget
+                moveTarget = null
+            } else if (alive) {
+                val drift = if (moveHeading.getDistance() > 0.001f) moveHeading.normalized() else Offset.Zero
+                blobPos = moveWithSliding(
+                    current = blobPos,
+                    velocity = drift * speed,
+                    radius = blobRadius * 0.75f,
+                    obstacles = obstacles,
+                    worldSize = worldSize,
+                    padding = movementPadding
+                )
+            }
 
-        val reachedFood = candidateFoodToConsume != null
+            if (candidateFoodToConsume == null) {
+                vacuoleProgress = (vacuoleProgress - 0.04f).coerceAtLeast(0f)
+                consumedFoodId = null
+            } else {
+                consumedFoodId = null
+                vacuoleProgress = 1f
+                playerFoodCount += 1
+                if (playerFoodCount >= nextSplitAt) {
+                    nextSplitAt += 10
+                    splitEventTimer = 1f
+                    if (bots.size < BOT_AMOEBA_COUNT) {
+                        val splitDir = Offset(cos(morphProgress * 2f * PI.toFloat()), sin(morphProgress * 2f * PI.toFloat())).normalized()
+                        bots = bots + BotAmoeba(
+                            id = (bots.maxOfOrNull { it.id } ?: 0) + 1,
+                            position = moveWithSliding(blobPos, splitDir * (blobRadius * 2.4f), blobRadius, obstacles, worldSize, blobRadius),
+                            heading = splitDir,
+                            color = botColor(Random.nextInt(BOT_AMOEBA_COUNT)),
+                            vacuoleProgress = 1f,
+                            foodCount = 0
+                        )
+                    }
+                }
+                playerColor = candidateFoodToConsume.color
+                foods = foods.filterNot { it.id == candidateFoodToConsume.id } + FoodParticle(
+                    id = nextFoodId++,
+                    position = randomFoodPosition(
+                        worldSize = worldSize,
+                        padding = max(blobRadius * 0.25f, blobRadius * 0.82f),
+                        blobPos = blobPos,
+                        minDistanceFromBlob = min(worldSize.width, worldSize.height) * 0.35f,
+                        obstacles = obstacles
+                    ),
+                    velocity = Offset.Zero,
+                    color = randomFoodColor(),
+                    emoji = randomFoodEmoji()
+                )
+                reachedFood = true
+            }
 
         val foodRadius = blobRadius * 0.25f
         val botRadius = blobRadius
@@ -1070,6 +1070,7 @@ fun AmoebaGame() {
         eaterPortalStates = updatedEaterStates.filterKeys { id -> amoebaEaters.any { it.id == id } }
 
         splitEventTimer = (splitEventTimer - 0.02f).coerceAtLeast(0f)
+        }
 
         obstacles.forEach { obstacle ->
             drawRect(
