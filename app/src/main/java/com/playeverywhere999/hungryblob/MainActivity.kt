@@ -214,6 +214,7 @@ fun AmoebaGame() {
     var cachedObstacleBounds by remember { mutableStateOf<ObstacleBounds?>(null) }
     var cachedObstacleIndex by remember { mutableStateOf<ObstacleIndex?>(null) }
     var topControlsHeightPx by remember { mutableStateOf(0) }
+    var isPaused by remember { mutableStateOf(false) }
 
     val resetGame: () -> Unit = {
         blobPos = Offset(400f, 700f)
@@ -273,16 +274,22 @@ fun AmoebaGame() {
                 .background(Color(0xFF071923))
                 .pointerInput(Unit) {
                     detectTapGestures { tap ->
-                        moveTarget = tap + cameraTopLeft
+                        if (!isPaused) {
+                            moveTarget = tap + cameraTopLeft
+                        }
                     }
                 }
                 .pointerInput(Unit) {
                     detectDragGestures(
                         onDragStart = { touch ->
-                            moveTarget = touch + cameraTopLeft
+                            if (!isPaused) {
+                                moveTarget = touch + cameraTopLeft
+                            }
                         },
                         onDrag = { change, _ ->
-                            moveTarget = change.position + cameraTopLeft
+                            if (!isPaused) {
+                                moveTarget = change.position + cameraTopLeft
+                            }
                         },
                         onDragEnd = {
                             moveTarget = null
@@ -293,7 +300,7 @@ fun AmoebaGame() {
                     )
                 }
         ) {
-        val speed = with(density) { 2.5f }
+        val speed = if (isPaused) 0f else with(density) { 2.5f }
         val viewportSize = size
         val worldSize = Size(viewportSize.width * 10f, viewportSize.height * 4f)
         val blobRadius = min(viewportSize.width, viewportSize.height) * 0.09f
@@ -1192,6 +1199,18 @@ fun AmoebaGame() {
                 )
             ) {
                 Text(if (isMusicEnabled) "🔊" else "🔇")
+            }
+            Button(
+                modifier = Modifier.padding(start = 8.dp),
+                onClick = {
+                    isPaused = !isPaused
+                    if (isPaused) moveTarget = null
+                },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color.White.copy(alpha = 0.22f)
+                )
+            ) {
+                Text(if (isPaused) "▶" else "⏸")
             }
             Button(
                 modifier = Modifier.padding(start = 8.dp),
