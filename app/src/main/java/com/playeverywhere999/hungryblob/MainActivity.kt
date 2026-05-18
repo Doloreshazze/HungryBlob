@@ -1154,19 +1154,21 @@ fun AmoebaGame() {
 
         jellyfish.forEach { jelly ->
             val center = jelly.position - cameraTopLeft
+            val sleeping = isPaused && isInViewport(center, jellyRadius)
             drawPoisonJellyfish(
                 center = center,
                 radius = jellyRadius,
-                phase = morphProgress + jelly.driftPhase
+                phase = morphProgress + jelly.driftPhase,
+                sleeping = sleeping
             )
-            if (isPaused && isInViewport(center, jellyRadius)) {
+            if (sleeping) {
                 drawSleepAnimation(center, jellyRadius, morphProgress + jelly.driftPhase)
-                drawSleepingEyes(center, jellyRadius)
             }
         }
 
         bots.forEach { bot ->
             val center = bot.position - cameraTopLeft
+            val sleeping = isPaused && isInViewport(center, blobRadius)
             drawAmoebaBody(
                 center = center,
                 baseRadius = blobRadius,
@@ -1177,16 +1179,17 @@ fun AmoebaGame() {
                 engulfProgress = bot.vacuoleProgress,
                 bodyColor = bot.color
             )
-            drawEyes(
-                center = center,
-                radius = blobRadius,
-                direction = bot.heading,
-                spinning = bot.consumedFoodId != null || bot.vacuoleProgress > 0f,
-                spinPhase = morphProgress,
-                shocked = bot.shockTimer > 0f,
-                shockStrength = bot.shockTimer
-            )
-            if (isPaused && isInViewport(center, blobRadius)) {
+            if (!sleeping) {
+                drawEyes(
+                    center = center,
+                    radius = blobRadius,
+                    direction = bot.heading,
+                    spinning = bot.consumedFoodId != null || bot.vacuoleProgress > 0f,
+                    spinPhase = morphProgress,
+                    shocked = bot.shockTimer > 0f,
+                    shockStrength = bot.shockTimer
+                )
+            } else {
                 drawSleepAnimation(center, blobRadius, morphProgress + bot.id * 0.11f)
                 drawSleepingEyes(center, blobRadius)
             }
@@ -1194,6 +1197,7 @@ fun AmoebaGame() {
 
         amoebaEaters.forEach { eater ->
             val center = eater.position - cameraTopLeft
+            val sleeping = isPaused && isInViewport(center, blobRadius * 1.05f)
             drawAmoebaEater(
                 center = center,
                 radius = blobRadius * 1.05f,
@@ -1201,11 +1205,11 @@ fun AmoebaGame() {
                 phase = morphProgress + eater.chompPhase,
                 type = eater.type,
                 shocked = eater.shockTimer > 0f,
-                shockStrength = eater.shockTimer
+                shockStrength = eater.shockTimer,
+                sleeping = sleeping
             )
-            if (isPaused && isInViewport(center, blobRadius * 1.05f)) {
+            if (sleeping) {
                 drawSleepAnimation(center, blobRadius * 1.05f, morphProgress + eater.id * 0.13f)
-                drawSleepingEyes(center, blobRadius * 1.05f)
             }
         }
 
@@ -1221,16 +1225,18 @@ fun AmoebaGame() {
             engulfProgress = vacuoleProgress,
             bodyColor = playerColor
         )
-        drawEyes(
-            center = playerCenter,
-            radius = blobRadius,
-            direction = direction,
-            spinning = reachedFood || vacuoleProgress > 0f,
-            spinPhase = morphProgress,
-            shocked = shockTimer > 0f,
-            shockStrength = shockTimer
-        )
-        if (isPaused && isInViewport(playerCenter, blobRadius)) {
+        val playerSleeping = isPaused && isInViewport(playerCenter, blobRadius)
+        if (!playerSleeping) {
+            drawEyes(
+                center = playerCenter,
+                radius = blobRadius,
+                direction = direction,
+                spinning = reachedFood || vacuoleProgress > 0f,
+                spinPhase = morphProgress,
+                shocked = shockTimer > 0f,
+                shockStrength = shockTimer
+            )
+        } else {
             drawSleepAnimation(playerCenter, blobRadius, morphProgress)
             drawSleepingEyes(playerCenter, blobRadius)
         }
@@ -1427,7 +1433,7 @@ private fun DrawScope.drawAmoebaBody(
     drawPath(path = path, color = bodyColor)
 }
 
-private fun DrawScope.drawPoisonJellyfish(center: Offset, radius: Float, phase: Float) {
+private fun DrawScope.drawPoisonJellyfish(center: Offset, radius: Float, phase: Float, sleeping: Boolean = false) {
     val domeColor = Color(0xCCB06CFF)
     val tentacleColor = Color(0xEE9A57E6)
     val eyeRadius = radius * 0.16f
@@ -1442,6 +1448,12 @@ private fun DrawScope.drawPoisonJellyfish(center: Offset, radius: Float, phase: 
     }
 
     val eyeCenter = center + Offset(0f, -radius * 0.06f)
+    if (sleeping) {
+        val eyeHalfWidth = eyeRadius * 0.8f
+        val eyeY = eyeCenter.y
+        drawLine(Color(0xFF230E3E), Offset(eyeCenter.x - eyeHalfWidth, eyeY), Offset(eyeCenter.x + eyeHalfWidth, eyeY), radius * 0.05f)
+        return
+    }
     val blinkWave = sin(phase * 2f * PI.toFloat() * 0.85f).toFloat()
     val blinkAmount = if (blinkWave > 0.93f) ((blinkWave - 0.93f) / 0.07f).coerceIn(0f, 1f) else 0f
     val eyeOpen = (1f - blinkAmount).coerceIn(0.08f, 1f)
@@ -1478,7 +1490,8 @@ private fun DrawScope.drawAmoebaEater(
     phase: Float,
     type: PredatorType,
     shocked: Boolean = false,
-    shockStrength: Float = 0f
+    shockStrength: Float = 0f,
+    sleeping: Boolean = false
 ) {
     val facing = if (direction.getDistance() > 0.001f) direction else Offset(1f, 0f)
     val side = Offset(-facing.y, facing.x)
@@ -1507,6 +1520,13 @@ private fun DrawScope.drawAmoebaEater(
     val leftEyeCenter = center + facing * (radius * 0.3f) + side * (radius * 0.18f)
     val rightEyeCenter = center + facing * (radius * 0.3f) - side * (radius * 0.18f)
     val eyeRadius = radius * 0.12f
+    if (sleeping) {
+        val eyeHalfWidth = eyeRadius * 0.9f
+        val eyeStroke = radius * 0.06f
+        drawLine(Color(0xFF10131A), leftEyeCenter + Offset(-eyeHalfWidth, 0f), leftEyeCenter + Offset(eyeHalfWidth, 0f), eyeStroke)
+        drawLine(Color(0xFF10131A), rightEyeCenter + Offset(-eyeHalfWidth, 0f), rightEyeCenter + Offset(eyeHalfWidth, 0f), eyeStroke)
+        return
+    }
     drawCircle(Color.White, eyeRadius, leftEyeCenter)
     drawCircle(Color.White, eyeRadius, rightEyeCenter)
 
