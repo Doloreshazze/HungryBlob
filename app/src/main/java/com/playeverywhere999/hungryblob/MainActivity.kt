@@ -17,6 +17,8 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -52,6 +54,7 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import com.playeverywhere999.hungryblob.ui.theme.HungryBlobTheme
 import org.json.JSONArray
@@ -116,6 +119,7 @@ private data class GameSnapshot(
     val nextFoodId: Long,
     val playerColorArgb: Int,
     val playerFoodCount: Int,
+    val playerBornAmoebasCount: Int,
     val nextSplitAt: Int,
     val bots: List<BotAmoeba>,
     val jellyfish: List<PoisonJellyfish>,
@@ -195,6 +199,7 @@ fun AmoebaGame() {
             nextFoodId = 1L,
             playerColorArgb = Color(0xFF83E7A0).toArgb(),
             playerFoodCount = 0,
+            playerBornAmoebasCount = 0,
             nextSplitAt = 10,
             bots = emptyList(),
             jellyfish = emptyList(),
@@ -230,6 +235,7 @@ fun AmoebaGame() {
     var shockTimer by remember { mutableStateOf(initialSnapshot.shockTimer) }
     var playerColor by remember { mutableStateOf(Color(initialSnapshot.playerColorArgb)) }
     var playerFoodCount by remember { mutableStateOf(initialSnapshot.playerFoodCount) }
+    var playerBornAmoebasCount by remember { mutableStateOf(initialSnapshot.playerBornAmoebasCount) }
     var splitEventTimer by remember { mutableStateOf(0f) }
     var nextSplitAt by remember { mutableStateOf(initialSnapshot.nextSplitAt) }
     var amoebaEaters by remember { mutableStateOf(initialSnapshot.amoebaEaters) }
@@ -263,6 +269,7 @@ fun AmoebaGame() {
         shockTimer = 0f
         playerColor = Color(0xFF83E7A0)
         playerFoodCount = 0
+        playerBornAmoebasCount = 0
         splitEventTimer = 0f
         nextSplitAt = 10
         amoebaEaters = emptyList()
@@ -284,6 +291,7 @@ fun AmoebaGame() {
             nextFoodId = nextFoodId,
             playerColorArgb = playerColor.toArgb(),
             playerFoodCount = playerFoodCount,
+            playerBornAmoebasCount = playerBornAmoebasCount,
             nextSplitAt = nextSplitAt,
             bots = bots,
             jellyfish = jellyfish,
@@ -490,6 +498,7 @@ fun AmoebaGame() {
                             vacuoleProgress = 1f,
                             foodCount = 0
                         )
+                        playerBornAmoebasCount += 1
                     }
                     val evilHeadingAngle = Random.nextFloat() * 2f * PI.toFloat()
                     val evilHeading = Offset(cos(evilHeadingAngle), sin(evilHeadingAngle))
@@ -1349,6 +1358,13 @@ fun AmoebaGame() {
                 .padding(12.dp)
                 .onSizeChanged { topControlsHeightPx = it.height }
         ) {
+            val totalAliveAmoebasCount = bots.size + if (playerRespawnTimer <= 0f) 1 else 0
+            Text(
+                text = "Живых амеб: $totalAliveAmoebasCount",
+                style = MaterialTheme.typography.titleMedium,
+                color = Color.White
+            )
+            Spacer(modifier = Modifier.width(8.dp))
             Button(
                 onClick = { isMusicEnabled = !isMusicEnabled },
                 colors = ButtonDefaults.buttonColors(
@@ -1964,6 +1980,7 @@ private fun saveSnapshot(context: android.content.Context, snapshot: GameSnapsho
         put("nextFoodId", snapshot.nextFoodId)
         put("playerColorArgb", snapshot.playerColorArgb)
         put("playerFoodCount", snapshot.playerFoodCount)
+        put("playerBornAmoebasCount", snapshot.playerBornAmoebasCount)
         put("nextSplitAt", snapshot.nextSplitAt)
         put("shockTimer", snapshot.shockTimer.toDouble())
         put("playerRespawnTimer", snapshot.playerRespawnTimer.toDouble())
@@ -2153,6 +2170,7 @@ private fun loadSnapshot(context: android.content.Context): GameSnapshot? {
             nextFoodId = json.getLong("nextFoodId"),
             playerColorArgb = json.optInt("playerColorArgb", Color(0xFF83E7A0).toArgb()),
             playerFoodCount = json.optInt("playerFoodCount", 0),
+            playerBornAmoebasCount = json.optInt("playerBornAmoebasCount", 0),
             nextSplitAt = json.optInt("nextSplitAt", 10),
             bots = bots,
             jellyfish = jellyfish,
