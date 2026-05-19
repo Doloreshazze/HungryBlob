@@ -1364,13 +1364,10 @@ fun AmoebaGame() {
         }
 
         val playerCenter = blobPos - cameraTopLeft
-        val birthProgress = (1f - playerBirthTimer).coerceIn(0f, 1f)
-        val birthRadiusScale = (0.35f + birthProgress * 0.65f).coerceIn(0.35f, 1f)
-        val animatedBlobRadius = blobRadius * birthRadiusScale
         val consumedFoodScreenPos = candidateFoodToConsume?.position?.minus(cameraTopLeft)
         drawAmoebaBody(
             center = playerCenter,
-            baseRadius = animatedBlobRadius,
+            baseRadius = blobRadius,
             morphProgress = morphProgress,
             direction = direction,
             engulfing = reachedFood,
@@ -1378,18 +1375,11 @@ fun AmoebaGame() {
             engulfProgress = vacuoleProgress,
             bodyColor = playerColor
         )
-        if (playerBirthTimer > 0f) {
-            drawCircle(
-                color = playerColor.copy(alpha = 0.25f * playerBirthTimer),
-                radius = blobRadius * (1.1f + (1f - birthProgress) * 0.9f),
-                center = playerCenter
-            )
-        }
-        val playerSleeping = isPaused && isInViewport(playerCenter, animatedBlobRadius)
+        val playerSleeping = isPaused && isInViewport(playerCenter, blobRadius)
         if (!playerSleeping) {
             drawEyes(
                 center = playerCenter,
-                radius = animatedBlobRadius,
+                radius = blobRadius,
                 direction = direction,
                 spinning = reachedFood || vacuoleProgress > 0f,
                 spinPhase = morphProgress,
@@ -1403,6 +1393,14 @@ fun AmoebaGame() {
 
         if (splitEventTimer > 0f) {
             drawSplitCelebration(blobPos - cameraTopLeft, blobRadius * (1f + splitEventTimer), splitEventTimer, morphProgress)
+        }
+        if (playerBirthTimer > 0f) {
+            drawSplitCelebration(
+                center = playerCenter,
+                radius = blobRadius * (1f + playerBirthTimer * 0.25f),
+                t = playerBirthTimer,
+                phase = morphProgress + 0.35f
+            )
         }
         val progress = ((playerFoodCount % 10) / 10f).coerceIn(0f, 1f)
         val hudTopOffset = topControlsHeightPx.toFloat() + with(density) { 12.dp.toPx() }
