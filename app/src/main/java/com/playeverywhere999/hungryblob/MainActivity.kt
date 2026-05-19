@@ -1128,7 +1128,27 @@ fun AmoebaGame() {
         if (playerRespawnTimer > 0f) {
             playerRespawnTimer = (playerRespawnTimer - 0.02f).coerceAtLeast(0f)
             if (playerRespawnTimer <= 0f) {
-                blobPos = randomFoodPosition(worldSize, blobRadius, blobPos, blobRadius * 2f, obstacles)
+                val parentBot = bots.randomOrNull()
+                val rebornNearParent = if (parentBot != null) {
+                    val spawnDistance = blobRadius * 1.9f
+                    val angle = Random.nextFloat() * 2f * PI.toFloat()
+                    val nearParent = Offset(
+                        x = parentBot.position.x + cos(angle) * spawnDistance,
+                        y = parentBot.position.y + sin(angle) * spawnDistance
+                    )
+                    val clamped = Offset(
+                        x = nearParent.x.coerceIn(blobRadius, worldSize.width - blobRadius),
+                        y = nearParent.y.coerceIn(blobRadius, worldSize.height - blobRadius)
+                    )
+                    if (!collidesWithObstacles(clamped, blobRadius * 0.75f, obstacles)) {
+                        clamped
+                    } else {
+                        randomFoodPosition(worldSize, blobRadius, parentBot.position, blobRadius * 1.2f, obstacles)
+                    }
+                } else {
+                    randomFoodPosition(worldSize, blobRadius, blobPos, blobRadius * 2f, obstacles)
+                }
+                blobPos = rebornNearParent
                 playerFoodCount = 0
                 splitEventTimer = 0f
                 nextSplitAt = 10
