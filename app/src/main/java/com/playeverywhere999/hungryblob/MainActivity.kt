@@ -16,6 +16,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.width
@@ -1424,12 +1425,15 @@ fun AmoebaGame() {
                 shape = RoundedCornerShape(100.dp),
                 color = Color.Black.copy(alpha = 0.28f)
             ) {
-                Text(
-                    text = "🦠 $totalAliveAmoebasCount",
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                    style = MaterialTheme.typography.titleMedium,
-                    color = Color.White
-                )
+                Row(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                    AmoebaMiniIcon(color = playerColor)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = totalAliveAmoebasCount.toString(),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = Color.White
+                    )
+                }
             }
             Spacer(modifier = Modifier.width(8.dp))
             Button(
@@ -1471,6 +1475,33 @@ fun AmoebaGame() {
                 Text("↺")
             }
         }
+    }
+}
+
+@Composable
+private fun AmoebaMiniIcon(
+    color: Color,
+    modifier: Modifier = Modifier
+) {
+    Canvas(modifier = modifier.size(18.dp)) {
+        val c = center
+        val r = size.minDimension * 0.42f
+        drawCircle(color = color.copy(alpha = 0.95f), radius = r, center = c)
+        drawCircle(
+            color = Color.White.copy(alpha = 0.18f),
+            radius = r * 0.52f,
+            center = Offset(c.x - r * 0.28f, c.y - r * 0.22f)
+        )
+        drawCircle(
+            color = Color.Black.copy(alpha = 0.3f),
+            radius = r * 0.11f,
+            center = Offset(c.x - r * 0.2f, c.y - r * 0.06f)
+        )
+        drawCircle(
+            color = Color.Black.copy(alpha = 0.3f),
+            radius = r * 0.11f,
+            center = Offset(c.x + r * 0.2f, c.y - r * 0.06f)
+        )
     }
 }
 
