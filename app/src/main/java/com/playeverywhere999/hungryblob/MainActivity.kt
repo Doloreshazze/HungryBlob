@@ -241,6 +241,7 @@ fun AmoebaGame() {
     var nextSplitAt by remember { mutableStateOf(initialSnapshot.nextSplitAt) }
     var amoebaEaters by remember { mutableStateOf(initialSnapshot.amoebaEaters) }
     var playerRespawnTimer by remember { mutableStateOf(initialSnapshot.playerRespawnTimer) }
+    var playerBirthTimer by remember { mutableStateOf(0f) }
     var portals by remember { mutableStateOf(initialSnapshot.portals) }
     var playerInsidePortal by remember { mutableStateOf(initialSnapshot.playerInsidePortal) }
     var botPortalStates by remember { mutableStateOf(initialSnapshot.botPortalStates) }
@@ -275,6 +276,7 @@ fun AmoebaGame() {
         nextSplitAt = 10
         amoebaEaters = emptyList()
         playerRespawnTimer = 0f
+        playerBirthTimer = 1f
         portals = emptyList()
         playerInsidePortal = false
         botPortalStates = emptyMap()
@@ -453,6 +455,7 @@ fun AmoebaGame() {
         var reachedFood = candidateFoodToConsume != null
 
         if (!isPaused) {
+            playerBirthTimer = (playerBirthTimer - 0.03f).coerceAtLeast(0f)
             val alive = playerRespawnTimer <= 0f
             if (alive && boundedTarget != null && targetDistance > speed) {
                 moveHeading = direction
@@ -1129,6 +1132,7 @@ fun AmoebaGame() {
                 playerFoodCount = 0
                 splitEventTimer = 0f
                 nextSplitAt = 10
+                playerBirthTimer = 1f
             }
         }
 
@@ -1340,10 +1344,13 @@ fun AmoebaGame() {
         }
 
         val playerCenter = blobPos - cameraTopLeft
+        val birthProgress = (1f - playerBirthTimer).coerceIn(0f, 1f)
+        val birthRadiusScale = (0.35f + birthProgress * 0.65f).coerceIn(0.35f, 1f)
+        val animatedBlobRadius = blobRadius * birthRadiusScale
         val consumedFoodScreenPos = candidateFoodToConsume?.position?.minus(cameraTopLeft)
         drawAmoebaBody(
             center = playerCenter,
-            baseRadius = blobRadius,
+            baseRadius = animatedBlobRadius,
             morphProgress = morphProgress,
             direction = direction,
             engulfing = reachedFood,
@@ -1351,11 +1358,18 @@ fun AmoebaGame() {
             engulfProgress = vacuoleProgress,
             bodyColor = playerColor
         )
-        val playerSleeping = isPaused && isInViewport(playerCenter, blobRadius)
+        if (playerBirthTimer > 0f) {
+            drawCircle(
+                color = playerColor.copy(alpha = 0.25f * playerBirthTimer),
+                radius = blobRadius * (1.1f + (1f - birthProgress) * 0.9f),
+                center = playerCenter
+            )
+        }
+        val playerSleeping = isPaused && isInViewport(playerCenter, animatedBlobRadius)
         if (!playerSleeping) {
             drawEyes(
                 center = playerCenter,
-                radius = blobRadius,
+                radius = animatedBlobRadius,
                 direction = direction,
                 spinning = reachedFood || vacuoleProgress > 0f,
                 spinPhase = morphProgress,
