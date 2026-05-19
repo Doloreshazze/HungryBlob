@@ -241,6 +241,7 @@ fun AmoebaGame() {
     var nextSplitAt by remember { mutableStateOf(initialSnapshot.nextSplitAt) }
     var amoebaEaters by remember { mutableStateOf(initialSnapshot.amoebaEaters) }
     var playerRespawnTimer by remember { mutableStateOf(initialSnapshot.playerRespawnTimer) }
+    var playerBirthTimer by remember { mutableStateOf(0f) }
     var portals by remember { mutableStateOf(initialSnapshot.portals) }
     var playerInsidePortal by remember { mutableStateOf(initialSnapshot.playerInsidePortal) }
     var botPortalStates by remember { mutableStateOf(initialSnapshot.botPortalStates) }
@@ -275,6 +276,7 @@ fun AmoebaGame() {
         nextSplitAt = 10
         amoebaEaters = emptyList()
         playerRespawnTimer = 0f
+        playerBirthTimer = 1f
         portals = emptyList()
         playerInsidePortal = false
         botPortalStates = emptyMap()
@@ -453,6 +455,7 @@ fun AmoebaGame() {
         var reachedFood = candidateFoodToConsume != null
 
         if (!isPaused) {
+            playerBirthTimer = (playerBirthTimer - 0.03f).coerceAtLeast(0f)
             val alive = playerRespawnTimer <= 0f
             if (alive && boundedTarget != null && targetDistance > speed) {
                 moveHeading = direction
@@ -1125,10 +1128,31 @@ fun AmoebaGame() {
         if (playerRespawnTimer > 0f) {
             playerRespawnTimer = (playerRespawnTimer - 0.02f).coerceAtLeast(0f)
             if (playerRespawnTimer <= 0f) {
-                blobPos = randomFoodPosition(worldSize, blobRadius, blobPos, blobRadius * 2f, obstacles)
+                val parentBot = bots.randomOrNull()
+                val rebornNearParent = if (parentBot != null) {
+                    val spawnDistance = blobRadius * 1.9f
+                    val angle = Random.nextFloat() * 2f * PI.toFloat()
+                    val nearParent = Offset(
+                        x = parentBot.position.x + cos(angle) * spawnDistance,
+                        y = parentBot.position.y + sin(angle) * spawnDistance
+                    )
+                    val clamped = Offset(
+                        x = nearParent.x.coerceIn(blobRadius, worldSize.width - blobRadius),
+                        y = nearParent.y.coerceIn(blobRadius, worldSize.height - blobRadius)
+                    )
+                    if (!collidesWithObstacles(clamped, blobRadius * 0.75f, obstacles)) {
+                        clamped
+                    } else {
+                        randomFoodPosition(worldSize, blobRadius, parentBot.position, blobRadius * 1.2f, obstacles)
+                    }
+                } else {
+                    randomFoodPosition(worldSize, blobRadius, blobPos, blobRadius * 2f, obstacles)
+                }
+                blobPos = rebornNearParent
                 playerFoodCount = 0
                 splitEventTimer = 0f
                 nextSplitAt = 10
+                playerBirthTimer = 1f
             }
         }
 
@@ -1369,6 +1393,14 @@ fun AmoebaGame() {
 
         if (splitEventTimer > 0f) {
             drawSplitCelebration(blobPos - cameraTopLeft, blobRadius * (1f + splitEventTimer), splitEventTimer, morphProgress)
+        }
+        if (playerBirthTimer > 0f) {
+            drawSplitCelebration(
+                center = playerCenter,
+                radius = blobRadius * (1f + playerBirthTimer * 0.25f),
+                t = playerBirthTimer,
+                phase = morphProgress + 0.35f
+            )
         }
         val progress = ((playerFoodCount % 10) / 10f).coerceIn(0f, 1f)
         val hudTopOffset = topControlsHeightPx.toFloat() + with(density) { 12.dp.toPx() }
