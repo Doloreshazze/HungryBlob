@@ -146,6 +146,7 @@ private const val BOT_PREDATOR_AVOID_RANGE_FACTOR = 6.4f
 private const val BOT_PREDATOR_AVOID_STRENGTH = 1.15f
 private const val BOT_PREDATOR_MAX_SAMPLES = 2
 private const val FOOD_CAPTURE_RADIUS_FACTOR = 1.1f
+private const val BOT_SPLIT_FOOD_THRESHOLD = 50
 private const val GAME_PREFS = "hungry_blob_save"
 private const val GAME_STATE_KEY = "state_v2"
 // TODO: Удалить перед релизом: временно снижаем нагрузку на сцену для тестирования поведения хищников.
@@ -942,6 +943,39 @@ fun AmoebaGame() {
                     emoji = randomFoodEmoji()
                 )
             }
+        }
+
+        val botsBornThisFrame = mutableListOf<BotAmoeba>()
+        bots = bots.map { bot ->
+            if (bot.foodCount >= BOT_SPLIT_FOOD_THRESHOLD && bots.size + botsBornThisFrame.size < BOT_AMOEBA_COUNT) {
+                val splitDir = bot.heading.normalized().let {
+                    if (it.getDistance() > 0.001f) it else Offset(1f, 0f)
+                }
+                val child = BotAmoeba(
+                    id = ((bots.maxOfOrNull { it.id } ?: 0) + 1) + botsBornThisFrame.size,
+                    position = moveWithSliding(
+                        current = bot.position,
+                        velocity = splitDir * (botRadius * 2.1f),
+                        radius = botRadius,
+                        obstacles = obstacles,
+                        worldSize = worldSize,
+                        padding = botRadius
+                    ),
+                    heading = splitDir,
+                    color = bot.color,
+                    consumedFoodId = null,
+                    vacuoleProgress = 1f,
+                    shockTimer = 0f,
+                    foodCount = 0
+                )
+                botsBornThisFrame += child
+                bot.copy(foodCount = 0, vacuoleProgress = 1f)
+            } else {
+                bot
+            }
+        }
+        if (botsBornThisFrame.isNotEmpty()) {
+            bots = bots + botsBornThisFrame
         }
 
         val eatenBotIds = mutableSetOf<Int>()
