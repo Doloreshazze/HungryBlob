@@ -54,16 +54,9 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.MusicNote
-import androidx.compose.material.icons.filled.MusicOff
-import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.foundation.shape.RoundedCornerShape
 import com.playeverywhere999.hungryblob.ui.theme.HungryBlobTheme
 import org.json.JSONArray
@@ -1448,10 +1441,7 @@ fun AmoebaGame() {
                 shape = RoundedCornerShape(14.dp),
                 elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp)
             ) {
-                Icon(
-                    imageVector = if (isMusicEnabled) Icons.Filled.MusicNote else Icons.Filled.MusicOff,
-                    contentDescription = null
-                )
+                Text(if (isMusicEnabled) "🔊" else "🔇")
             }
             Button(
                 modifier = Modifier.padding(start = 8.dp),
@@ -1466,10 +1456,7 @@ fun AmoebaGame() {
                 shape = RoundedCornerShape(14.dp),
                 elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp)
             ) {
-                Icon(
-                    imageVector = if (isPaused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
-                    contentDescription = null
-                )
+                Text(if (isPaused) "▶" else "⏸")
             }
             Button(
                 modifier = Modifier.padding(start = 8.dp),
@@ -1481,10 +1468,7 @@ fun AmoebaGame() {
                 shape = RoundedCornerShape(14.dp),
                 elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp)
             ) {
-                Icon(
-                    imageVector = Icons.Filled.Refresh,
-                    contentDescription = null
-                )
+                Text("↺")
             }
         }
     }
