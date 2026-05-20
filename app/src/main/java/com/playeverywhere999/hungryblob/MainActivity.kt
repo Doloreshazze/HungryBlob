@@ -16,6 +16,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.width
@@ -55,7 +56,9 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.foundation.shape.RoundedCornerShape
 import com.playeverywhere999.hungryblob.ui.theme.HungryBlobTheme
 import org.json.JSONArray
 import org.json.JSONObject
@@ -1409,13 +1412,6 @@ fun AmoebaGame() {
             size = Size(150f, 22f),
             progress = progress
         )
-        drawBotCountGauge(
-            topLeft = Offset(16f, hudTopOffset + 62f),
-            size = Size(150f, 22f),
-            botCount = bots.size,
-            maxBotCount = BOT_AMOEBA_COUNT
-        )
-
         }
 
         Row(
@@ -1425,17 +1421,29 @@ fun AmoebaGame() {
                 .onSizeChanged { topControlsHeightPx = it.height }
         ) {
             val totalAliveAmoebasCount = bots.size + if (playerRespawnTimer <= 0f) 1 else 0
-            Text(
-                text = "Живых амеб: $totalAliveAmoebasCount",
-                style = MaterialTheme.typography.titleMedium,
-                color = Color.White
-            )
+            Surface(
+                shape = RoundedCornerShape(100.dp),
+                color = Color.Black.copy(alpha = 0.28f)
+            ) {
+                Row(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                    AmoebaMiniIcon(color = playerColor)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = totalAliveAmoebasCount.toString(),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = Color.White
+                    )
+                }
+            }
             Spacer(modifier = Modifier.width(8.dp))
             Button(
                 onClick = { isMusicEnabled = !isMusicEnabled },
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = Color.White.copy(alpha = 0.22f)
-                )
+                    containerColor = Color(0xFF1E2E40),
+                    contentColor = Color.White
+                ),
+                shape = RoundedCornerShape(14.dp),
+                elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp)
             ) {
                 Text(if (isMusicEnabled) "🔊" else "🔇")
             }
@@ -1446,8 +1454,11 @@ fun AmoebaGame() {
                     if (isPaused) moveTarget = null
                 },
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = Color.White.copy(alpha = 0.22f)
-                )
+                    containerColor = Color(0xFF34506D),
+                    contentColor = Color.White
+                ),
+                shape = RoundedCornerShape(14.dp),
+                elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp)
             ) {
                 Text(if (isPaused) "▶" else "⏸")
             }
@@ -1455,8 +1466,11 @@ fun AmoebaGame() {
                 modifier = Modifier.padding(start = 8.dp),
                 onClick = resetGame,
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = Color.White.copy(alpha = 0.22f)
-                )
+                    containerColor = Color(0xFF5A3D60),
+                    contentColor = Color.White
+                ),
+                shape = RoundedCornerShape(14.dp),
+                elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp)
             ) {
                 Text("↺")
             }
@@ -1464,25 +1478,40 @@ fun AmoebaGame() {
     }
 }
 
-private fun DrawScope.drawBotCountGauge(
-    topLeft: Offset,
-    size: Size,
-    botCount: Int,
-    maxBotCount: Int
+@Composable
+private fun AmoebaMiniIcon(
+    color: Color,
+    modifier: Modifier = Modifier
 ) {
-    val clampedProgress = (botCount.toFloat() / max(1, maxBotCount).toFloat()).coerceIn(0f, 1f)
-    drawRoundRect(
-        color = Color(0x66365566),
-        topLeft = topLeft,
-        size = size,
-        cornerRadius = androidx.compose.ui.geometry.CornerRadius(11f, 11f)
-    )
-    drawRoundRect(
-        color = Color(0xFFB68CFF),
-        topLeft = Offset(topLeft.x + 2f, topLeft.y + 2f),
-        size = Size((size.width - 4f) * clampedProgress, size.height - 4f),
-        cornerRadius = androidx.compose.ui.geometry.CornerRadius(9f, 9f)
-    )
+    Canvas(modifier = modifier.size(18.dp)) {
+        val c = center
+        val r = size.minDimension * 0.42f
+        val miniAmoebaPath = buildAmoebaPath(
+            center = c,
+            baseRadius = r,
+            morphProgress = 0.22f,
+            direction = Offset(1f, 0f),
+            engulfing = false,
+            foodScreenPosition = null,
+            engulfProgress = 0f
+        )
+        drawPath(path = miniAmoebaPath, color = color.copy(alpha = 0.95f))
+        drawCircle(
+            color = Color.White.copy(alpha = 0.18f),
+            radius = r * 0.52f,
+            center = Offset(c.x - r * 0.28f, c.y - r * 0.22f)
+        )
+        drawCircle(
+            color = Color.Black.copy(alpha = 0.3f),
+            radius = r * 0.11f,
+            center = Offset(c.x - r * 0.2f, c.y - r * 0.06f)
+        )
+        drawCircle(
+            color = Color.Black.copy(alpha = 0.3f),
+            radius = r * 0.11f,
+            center = Offset(c.x + r * 0.2f, c.y - r * 0.06f)
+        )
+    }
 }
 
 
@@ -1493,16 +1522,18 @@ private fun DrawScope.drawFoodGauge(
 ) {
     val clampedProgress = progress.coerceIn(0f, 1f)
     drawRoundRect(
-        color = Color(0x66365566),
+        color = Color(0xA0121D2C),
         topLeft = topLeft,
         size = size,
-        cornerRadius = androidx.compose.ui.geometry.CornerRadius(11f, 11f)
+        cornerRadius = androidx.compose.ui.geometry.CornerRadius(12f, 12f)
     )
     drawRoundRect(
-        color = Color(0xFF72F0A0),
+        brush = androidx.compose.ui.graphics.Brush.horizontalGradient(
+            listOf(Color(0xFF63E98F), Color(0xFF8EF4CC))
+        ),
         topLeft = Offset(topLeft.x + 2f, topLeft.y + 2f),
         size = Size((size.width - 4f) * clampedProgress, size.height - 4f),
-        cornerRadius = androidx.compose.ui.geometry.CornerRadius(9f, 9f)
+        cornerRadius = androidx.compose.ui.geometry.CornerRadius(10f, 10f)
     )
 }
 
