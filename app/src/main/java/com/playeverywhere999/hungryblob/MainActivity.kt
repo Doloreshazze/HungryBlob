@@ -18,6 +18,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -1476,8 +1477,16 @@ private fun GameHud(
                 OrganicHealthBar(progress = hpProgress)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                HudIconButton(icon = if (isMusicEnabled) "🔊" else "🔇", onClick = onSoundToggle)
-                HudIconButton(icon = if (isPaused) "▶" else "⏸", onClick = onPauseToggle)
+                HudIconButton(
+                    icon = if (isMusicEnabled) "🔊" else "🔇",
+                    onClick = onSoundToggle,
+                    accentColor = Color(0xFF7BE7FF)
+                )
+                HudIconButton(
+                    icon = if (isPaused) "▶" else "⏸",
+                    onClick = onPauseToggle,
+                    accentColor = Color(0xFFFFCF7E)
+                )
             }
         }
     }
@@ -1538,15 +1547,65 @@ private fun OrganicHealthBar(progress: Float) {
 }
 
 @Composable
-private fun HudIconButton(icon: String, onClick: () -> Unit) {
+private fun HudIconButton(
+    icon: String,
+    onClick: () -> Unit,
+    accentColor: Color
+) {
     val interaction = remember { MutableInteractionSource() }
+    val isPressed by interaction.collectIsPressedAsState()
+    val bounce = rememberInfiniteTransition(label = "hud-bounce").animateFloat(
+        initialValue = 0.985f,
+        targetValue = 1.015f,
+        animationSpec = infiniteRepeatable(tween(980), RepeatMode.Reverse),
+        label = "hud-bounce-v"
+    ).value
+    val pressScale by animateFloatAsState(
+        targetValue = if (isPressed) 0.94f else 1f,
+        animationSpec = tween(120),
+        label = "hud-press"
+    )
     IconButton(
         onClick = onClick,
         interactionSource = interaction,
-        colors = IconButtonDefaults.iconButtonColors(containerColor = Color(0xB0182C38), contentColor = Color.White),
-        modifier = Modifier.size(52.dp)
+        colors = IconButtonDefaults.iconButtonColors(containerColor = Color.Transparent, contentColor = Color.White),
+        modifier = Modifier
+            .width(72.dp)
+            .height(40.dp)
     ) {
-        Text(icon, style = MaterialTheme.typography.titleLarge)
+        Surface(
+            modifier = Modifier
+                .fillMaxSize()
+                .scale(bounce * pressScale)
+                .background(Color.Transparent),
+            shape = RoundedCornerShape(100.dp),
+            color = Color(0xA60A2230),
+            border = BorderStroke(1.dp, Color(0x6698FFF6))
+        ) {
+            Box(contentAlignment = androidx.compose.ui.Alignment.Center) {
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    val glowHeight = size.height * 0.48f
+                    drawRoundRect(
+                        brush = Brush.verticalGradient(
+                            colors = listOf(accentColor.copy(alpha = 0.32f), Color.Transparent)
+                        ),
+                        topLeft = Offset(size.width * 0.14f, size.height * 0.1f),
+                        size = Size(size.width * 0.72f, glowHeight),
+                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(glowHeight, glowHeight)
+                    )
+                    drawCircle(
+                        color = Color.White.copy(alpha = 0.22f),
+                        radius = size.height * 0.13f,
+                        center = Offset(size.width * 0.28f, size.height * 0.32f)
+                    )
+                }
+                Text(
+                    icon,
+                    style = MaterialTheme.typography.titleLarge,
+                    color = Color.White
+                )
+            }
+        }
     }
 }
 
