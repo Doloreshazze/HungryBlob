@@ -1486,7 +1486,16 @@ private fun AmoebaMiniIcon(
     Canvas(modifier = modifier.size(18.dp)) {
         val c = center
         val r = size.minDimension * 0.42f
-        drawCircle(color = color.copy(alpha = 0.95f), radius = r, center = c)
+        val miniAmoebaPath = buildAmoebaPath(
+            center = c,
+            baseRadius = r,
+            morphProgress = 0.22f,
+            direction = Offset(1f, 0f),
+            engulfing = false,
+            foodScreenPosition = null,
+            engulfProgress = 0f
+        )
+        drawPath(path = miniAmoebaPath, color = color.copy(alpha = 0.95f))
         drawCircle(
             color = Color.White.copy(alpha = 0.18f),
             radius = r * 0.52f,
