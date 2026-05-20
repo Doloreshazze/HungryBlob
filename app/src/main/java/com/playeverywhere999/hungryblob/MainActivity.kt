@@ -18,6 +18,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -72,6 +73,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import com.playeverywhere999.hungryblob.ui.theme.HungryBlobTheme
 import org.json.JSONArray
 import org.json.JSONObject
@@ -1476,8 +1478,16 @@ private fun GameHud(
                 OrganicHealthBar(progress = hpProgress)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                HudIconButton(icon = if (isMusicEnabled) "🔊" else "🔇", onClick = onSoundToggle)
-                HudIconButton(icon = if (isPaused) "▶" else "⏸", onClick = onPauseToggle)
+                HudIconButton(
+                    icon = if (isMusicEnabled) "🔊" else "🔇",
+                    onClick = onSoundToggle,
+                    accentColor = Color(0xFF7BE7FF)
+                )
+                HudIconButton(
+                    icon = if (isPaused) "▶" else "⏸",
+                    onClick = onPauseToggle,
+                    accentColor = Color(0xFFFFCF7E)
+                )
             }
         }
     }
@@ -1538,15 +1548,65 @@ private fun OrganicHealthBar(progress: Float) {
 }
 
 @Composable
-private fun HudIconButton(icon: String, onClick: () -> Unit) {
+private fun HudIconButton(
+    icon: String,
+    onClick: () -> Unit,
+    accentColor: Color
+) {
     val interaction = remember { MutableInteractionSource() }
+    val isPressed by interaction.collectIsPressedAsState()
+    val bounce = rememberInfiniteTransition(label = "hud-bounce").animateFloat(
+        initialValue = 0.97f,
+        targetValue = 1.03f,
+        animationSpec = infiniteRepeatable(tween(820), RepeatMode.Reverse),
+        label = "hud-bounce-v"
+    ).value
+    val pressScale by animateFloatAsState(
+        targetValue = if (isPressed) 0.9f else 1f,
+        animationSpec = tween(110),
+        label = "hud-press"
+    )
     IconButton(
         onClick = onClick,
         interactionSource = interaction,
-        colors = IconButtonDefaults.iconButtonColors(containerColor = Color(0xB0182C38), contentColor = Color.White),
-        modifier = Modifier.size(52.dp)
+        colors = IconButtonDefaults.iconButtonColors(containerColor = Color.Transparent, contentColor = Color.White),
+        modifier = Modifier.size(56.dp)
     ) {
-        Text(icon, style = MaterialTheme.typography.titleLarge)
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .scale(bounce * pressScale)
+                .background(
+                    brush = Brush.radialGradient(
+                        colors = listOf(accentColor.copy(alpha = 0.75f), Color(0xFF173548))
+                    ),
+                    shape = CircleShape
+                )
+                .background(
+                    color = Color(0x6637E9FF),
+                    shape = CircleShape
+                ),
+            contentAlignment = androidx.compose.ui.Alignment.Center
+        ) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                drawCircle(
+                    color = Color.White.copy(alpha = 0.26f),
+                    radius = size.minDimension * 0.18f,
+                    center = Offset(size.width * 0.34f, size.height * 0.28f)
+                )
+                drawCircle(
+                    color = Color.White.copy(alpha = 0.13f),
+                    radius = size.minDimension * 0.08f,
+                    center = Offset(size.width * 0.66f, size.height * 0.74f)
+                )
+                drawCircle(
+                    color = accentColor.copy(alpha = 0.68f),
+                    radius = size.minDimension * 0.48f,
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = size.minDimension * 0.06f)
+                )
+            }
+            Text(icon, style = MaterialTheme.typography.headlineSmall)
+        }
     }
 }
 
