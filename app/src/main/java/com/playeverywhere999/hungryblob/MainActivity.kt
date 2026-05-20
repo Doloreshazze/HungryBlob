@@ -299,6 +299,7 @@ fun AmoebaGame() {
         botPortalStates = emptyMap()
         jellyPortalStates = emptyMap()
         eaterPortalStates = emptyMap()
+        isPaused = false
     }
 
     val latestSnapshot by rememberUpdatedState(
