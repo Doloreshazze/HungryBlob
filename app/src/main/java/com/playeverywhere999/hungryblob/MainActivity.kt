@@ -73,7 +73,6 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.shape.CircleShape
 import com.playeverywhere999.hungryblob.ui.theme.HungryBlobTheme
 import org.json.JSONArray
 import org.json.JSONObject
@@ -1556,56 +1555,56 @@ private fun HudIconButton(
     val interaction = remember { MutableInteractionSource() }
     val isPressed by interaction.collectIsPressedAsState()
     val bounce = rememberInfiniteTransition(label = "hud-bounce").animateFloat(
-        initialValue = 0.97f,
-        targetValue = 1.03f,
-        animationSpec = infiniteRepeatable(tween(820), RepeatMode.Reverse),
+        initialValue = 0.985f,
+        targetValue = 1.015f,
+        animationSpec = infiniteRepeatable(tween(980), RepeatMode.Reverse),
         label = "hud-bounce-v"
     ).value
     val pressScale by animateFloatAsState(
-        targetValue = if (isPressed) 0.9f else 1f,
-        animationSpec = tween(110),
+        targetValue = if (isPressed) 0.94f else 1f,
+        animationSpec = tween(120),
         label = "hud-press"
     )
     IconButton(
         onClick = onClick,
         interactionSource = interaction,
         colors = IconButtonDefaults.iconButtonColors(containerColor = Color.Transparent, contentColor = Color.White),
-        modifier = Modifier.size(56.dp)
+        modifier = Modifier
+            .width(72.dp)
+            .height(40.dp)
     ) {
-        Box(
+        Surface(
             modifier = Modifier
                 .fillMaxSize()
                 .scale(bounce * pressScale)
-                .background(
-                    brush = Brush.radialGradient(
-                        colors = listOf(accentColor.copy(alpha = 0.75f), Color(0xFF173548))
-                    ),
-                    shape = CircleShape
-                )
-                .background(
-                    color = Color(0x6637E9FF),
-                    shape = CircleShape
-                ),
-            contentAlignment = androidx.compose.ui.Alignment.Center
+                .background(Color.Transparent),
+            shape = RoundedCornerShape(100.dp),
+            color = Color(0xA60A2230),
+            border = BorderStroke(1.dp, Color(0x6698FFF6))
         ) {
-            Canvas(modifier = Modifier.fillMaxSize()) {
-                drawCircle(
-                    color = Color.White.copy(alpha = 0.26f),
-                    radius = size.minDimension * 0.18f,
-                    center = Offset(size.width * 0.34f, size.height * 0.28f)
-                )
-                drawCircle(
-                    color = Color.White.copy(alpha = 0.13f),
-                    radius = size.minDimension * 0.08f,
-                    center = Offset(size.width * 0.66f, size.height * 0.74f)
-                )
-                drawCircle(
-                    color = accentColor.copy(alpha = 0.68f),
-                    radius = size.minDimension * 0.48f,
-                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = size.minDimension * 0.06f)
+            Box(contentAlignment = androidx.compose.ui.Alignment.Center) {
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    val glowHeight = size.height * 0.48f
+                    drawRoundRect(
+                        brush = Brush.verticalGradient(
+                            colors = listOf(accentColor.copy(alpha = 0.32f), Color.Transparent)
+                        ),
+                        topLeft = Offset(size.width * 0.14f, size.height * 0.1f),
+                        size = Size(size.width * 0.72f, glowHeight),
+                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(glowHeight, glowHeight)
+                    )
+                    drawCircle(
+                        color = Color.White.copy(alpha = 0.22f),
+                        radius = size.height * 0.13f,
+                        center = Offset(size.width * 0.28f, size.height * 0.32f)
+                    )
+                }
+                Text(
+                    icon,
+                    style = MaterialTheme.typography.titleLarge,
+                    color = Color.White
                 )
             }
-            Text(icon, style = MaterialTheme.typography.headlineSmall)
         }
     }
 }
