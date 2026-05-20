@@ -1484,9 +1484,11 @@ private fun GameHud(
             ScorePill(score = score, playerColor = playerColor)
             OrganicHealthBar(progress = hpProgress, modifier = Modifier.weight(1f))
             HudIconButton(
-                icon = if (isMusicEnabled) "🔊" else "🔇",
+                icon = "🔊",
                 onClick = onSoundToggle,
-                accentColor = Color(0xFF7BE7FF)
+                accentColor = Color(0xFF7BE7FF),
+                showSlash = !isMusicEnabled,
+                slashColor = Color(0xFF2A6B7B)
             )
             HudIconButton(
                 icon = if (isPaused) "▶" else "⏸",
@@ -1543,8 +1545,19 @@ private fun GameHud(
         pulse = false
     }
     val popScale by animateFloatAsState(targetValue = if (pulse) 1.08f else 1f, animationSpec = tween(130), label = "score-pop")
-    Surface(shape = RoundedCornerShape(100.dp), color = Color(0xB20A2230), border = BorderStroke(1.dp, Color(0x6698FFF6))) {
-        Row(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp).scale(popScale)) {
+    val idleScale = rememberInfiniteTransition(label = "score-idle").animateFloat(
+        initialValue = 0.992f,
+        targetValue = 1.012f,
+        animationSpec = infiniteRepeatable(tween(980), RepeatMode.Reverse),
+        label = "score-idle-scale"
+    ).value
+    Surface(
+        modifier = Modifier.scale(popScale * idleScale),
+        shape = RoundedCornerShape(100.dp),
+        color = Color(0xB20A2230),
+        border = BorderStroke(1.dp, Color(0x6698FFF6))
+    ) {
+        Row(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
             AmoebaMiniIcon(color = playerColor)
             Spacer(modifier = Modifier.width(8.dp))
             Text(text = score.toString(), style = MaterialTheme.typography.titleMedium, color = Color.White)
@@ -1567,7 +1580,9 @@ private fun OrganicHealthBar(
         shape = RoundedCornerShape(14.dp),
         color = Color(0xB20A2230),
         border = BorderStroke(1.dp, Color(0x6698FFF6)),
-        modifier = modifier.height(40.dp)
+        modifier = modifier
+            .height(40.dp)
+            .scale(0.992f + pulse * 0.016f)
     ) {
         LinearProgressIndicator(
             progress = { animatedProgress },
@@ -1583,7 +1598,9 @@ private fun OrganicHealthBar(
 private fun HudIconButton(
     icon: String,
     onClick: () -> Unit,
-    accentColor: Color
+    accentColor: Color,
+    showSlash: Boolean = false,
+    slashColor: Color = Color.White
 ) {
     val interaction = remember { MutableInteractionSource() }
     val isPressed by interaction.collectIsPressedAsState()
@@ -1631,6 +1648,14 @@ private fun HudIconButton(
                         radius = size.height * 0.13f,
                         center = Offset(size.width * 0.28f, size.height * 0.32f)
                     )
+                    if (showSlash) {
+                        drawLine(
+                            color = slashColor,
+                            start = Offset(size.width * 0.28f, size.height * 0.78f),
+                            end = Offset(size.width * 0.72f, size.height * 0.22f),
+                            strokeWidth = size.height * 0.1f
+                        )
+                    }
                 }
                 Text(
                     icon,
