@@ -7,23 +7,32 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -36,6 +45,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.nativeCanvas
@@ -55,7 +65,10 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -69,6 +82,7 @@ import kotlin.math.min
 import kotlin.math.sin
 import kotlin.math.sqrt
 import kotlin.random.Random
+import androidx.compose.ui.draw.scale
 
 private data class FoodParticle(
     val id: Long,
@@ -257,7 +271,6 @@ fun AmoebaGame() {
     var cachedObstacles by remember { mutableStateOf(emptyList<ObstacleRect>()) }
     var cachedObstacleBounds by remember { mutableStateOf<ObstacleBounds?>(null) }
     var cachedObstacleIndex by remember { mutableStateOf<ObstacleIndex?>(null) }
-    var topControlsHeightPx by remember { mutableStateOf(0) }
     var isPaused by remember { mutableStateOf(initialSnapshot.isPaused) }
 
     val resetGame: () -> Unit = {
@@ -1225,10 +1238,27 @@ fun AmoebaGame() {
         }
 
         obstacles.forEach { obstacle ->
-            drawRect(
-                color = Color(0xFF2B6F7F),
-                topLeft = Offset(obstacle.left, obstacle.top) - cameraTopLeft,
-                size = Size(obstacle.right - obstacle.left, obstacle.bottom - obstacle.top)
+            val topLeft = Offset(obstacle.left, obstacle.top) - cameraTopLeft
+            val rectSize = Size(obstacle.right - obstacle.left, obstacle.bottom - obstacle.top)
+            drawRoundRect(
+                color = Color(0x66203544),
+                topLeft = topLeft + Offset(4f, 6f),
+                size = rectSize,
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(14f, 14f)
+            )
+            drawRoundRect(
+                brush = Brush.verticalGradient(
+                    colors = listOf(Color(0xFF347E90), Color(0xFF2A6B7B))
+                ),
+                topLeft = topLeft,
+                size = rectSize,
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(14f, 14f)
+            )
+            drawRoundRect(
+                color = Color(0x3398FFF6),
+                topLeft = topLeft + Offset(2f, 2f),
+                size = Size((rectSize.width - 4f).coerceAtLeast(0f), (rectSize.height * 0.32f).coerceAtLeast(0f)),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(12f, 12f)
             )
         }
 
@@ -1405,76 +1435,118 @@ fun AmoebaGame() {
                 phase = morphProgress + 0.35f
             )
         }
-        val progress = ((playerFoodCount % 10) / 10f).coerceIn(0f, 1f)
-        val hudTopOffset = topControlsHeightPx.toFloat() + with(density) { 12.dp.toPx() }
-        drawFoodGauge(
-            topLeft = Offset(16f, hudTopOffset),
-            size = Size(150f, 22f),
-            progress = progress
-        )
         }
 
-        Row(
-            modifier = Modifier
-                .statusBarsPadding()
-                .padding(12.dp)
-                .onSizeChanged { topControlsHeightPx = it.height }
-        ) {
-            val totalAliveAmoebasCount = bots.size + if (playerRespawnTimer <= 0f) 1 else 0
-            Surface(
-                shape = RoundedCornerShape(100.dp),
-                color = Color.Black.copy(alpha = 0.28f)
-            ) {
-                Row(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
-                    AmoebaMiniIcon(color = playerColor)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = totalAliveAmoebasCount.toString(),
-                        style = MaterialTheme.typography.titleMedium,
-                        color = Color.White
-                    )
-                }
+        GameHud(
+            score = bots.size + if (playerRespawnTimer <= 0f) 1 else 0,
+            hpProgress = ((playerFoodCount % 10) / 10f).coerceIn(0f, 1f),
+            playerColor = playerColor,
+            isPaused = isPaused,
+            isMusicEnabled = isMusicEnabled,
+            onSoundToggle = { isMusicEnabled = !isMusicEnabled },
+            onPauseToggle = {
+                isPaused = !isPaused
+                if (isPaused) moveTarget = null
+            },
+            onRestart = resetGame
+        )
+    }
+}
+
+@Composable
+private fun GameHud(
+    score: Int,
+    hpProgress: Float,
+    playerColor: Color,
+    isPaused: Boolean,
+    isMusicEnabled: Boolean,
+    onSoundToggle: () -> Unit,
+    onPauseToggle: () -> Unit,
+    onRestart: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(WindowInsets.safeDrawing.asPaddingValues())
+            .padding(horizontal = 16.dp, vertical = 12.dp)
+    ) {
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.weight(1f)) {
+                ScorePill(score = score, playerColor = playerColor)
+                OrganicHealthBar(progress = hpProgress)
             }
-            Spacer(modifier = Modifier.width(8.dp))
-            Button(
-                onClick = { isMusicEnabled = !isMusicEnabled },
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF1E2E40),
-                    contentColor = Color.White
-                ),
-                shape = RoundedCornerShape(14.dp),
-                elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp)
-            ) {
-                Text(if (isMusicEnabled) "🔊" else "🔇")
-            }
-            Button(
-                modifier = Modifier.padding(start = 8.dp),
-                onClick = {
-                    isPaused = !isPaused
-                    if (isPaused) moveTarget = null
-                },
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF34506D),
-                    contentColor = Color.White
-                ),
-                shape = RoundedCornerShape(14.dp),
-                elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp)
-            ) {
-                Text(if (isPaused) "▶" else "⏸")
-            }
-            Button(
-                modifier = Modifier.padding(start = 8.dp),
-                onClick = resetGame,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF5A3D60),
-                    contentColor = Color.White
-                ),
-                shape = RoundedCornerShape(14.dp),
-                elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp)
-            ) {
-                Text("↺")
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                HudIconButton(icon = if (isMusicEnabled) "🔊" else "🔇", onClick = onSoundToggle)
+                HudIconButton(icon = if (isPaused) "▶" else "⏸", onClick = onPauseToggle)
             }
         }
+    }
+    if (isPaused) {
+        Surface(
+            modifier = Modifier
+                .padding(WindowInsets.safeDrawing.asPaddingValues())
+                .padding(top = 104.dp, end = 16.dp)
+                .offset(x = 0.dp, y = 0.dp),
+            shape = RoundedCornerShape(18.dp),
+            color = Color(0xCC0B2330),
+            border = BorderStroke(1.dp, Color(0x6698FFF6))
+        ) {
+            Button(
+                onClick = onRestart,
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0x4435B6A9), contentColor = Color.White),
+                modifier = Modifier.padding(8.dp)
+            ) { Text("Restart") }
+        }
+    }
+}
+
+@Composable private fun ScorePill(score: Int, playerColor: Color) {
+    var pulse by remember(score) { mutableStateOf(true) }
+    LaunchedEffect(score) {
+        pulse = true
+        kotlinx.coroutines.delay(130)
+        pulse = false
+    }
+    val popScale by animateFloatAsState(targetValue = if (pulse) 1.08f else 1f, animationSpec = tween(130), label = "score-pop")
+    Surface(shape = RoundedCornerShape(100.dp), color = Color(0xB20A2230), border = BorderStroke(1.dp, Color(0x6698FFF6))) {
+        Row(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp).scale(popScale)) {
+            AmoebaMiniIcon(color = playerColor)
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(text = score.toString(), style = MaterialTheme.typography.titleMedium, color = Color.White)
+        }
+    }
+}
+
+@Composable
+private fun OrganicHealthBar(progress: Float) {
+    val lowHp = progress < 0.3f
+    val pulse = rememberInfiniteTransition(label = "hp-pulse").animateFloat(
+        initialValue = 0.8f, targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(700), RepeatMode.Reverse), label = "hp-p"
+    ).value
+    val animatedProgress by animateFloatAsState(progress.coerceIn(0f, 1f), tween(350), label = "hp")
+    Surface(shape = RoundedCornerShape(100.dp), color = Color(0xA60A2230), modifier = Modifier.width(170.dp).height(18.dp)) {
+        LinearProgressIndicator(
+            progress = { animatedProgress },
+            modifier = Modifier.fillMaxSize().padding(2.dp),
+            color = if (lowHp) Color(0xFFFF7A4C).copy(alpha = pulse) else Color(0xFF70F5BA),
+            trackColor = Color(0x33000000),
+            strokeCap = androidx.compose.ui.graphics.StrokeCap.Round
+        )
+    }
+}
+
+@Composable
+private fun HudIconButton(icon: String, onClick: () -> Unit) {
+    val interaction = remember { MutableInteractionSource() }
+    IconButton(
+        onClick = onClick,
+        interactionSource = interaction,
+        colors = IconButtonDefaults.iconButtonColors(containerColor = Color(0xB0182C38), contentColor = Color.White),
+        modifier = Modifier.size(52.dp)
+    ) {
+        Text(icon, style = MaterialTheme.typography.titleLarge)
     }
 }
 
