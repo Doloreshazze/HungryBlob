@@ -1476,23 +1476,23 @@ private fun GameHud(
             .padding(WindowInsets.safeDrawing.asPaddingValues())
             .padding(horizontal = 16.dp, vertical = 12.dp)
     ) {
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.weight(1f)) {
-                ScorePill(score = score, playerColor = playerColor)
-                OrganicHealthBar(progress = hpProgress)
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                HudIconButton(
-                    icon = if (isMusicEnabled) "🔊" else "🔇",
-                    onClick = onSoundToggle,
-                    accentColor = Color(0xFF7BE7FF)
-                )
-                HudIconButton(
-                    icon = if (isPaused) "▶" else "⏸",
-                    onClick = onPauseToggle,
-                    accentColor = Color(0xFFFFCF7E)
-                )
-            }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+        ) {
+            ScorePill(score = score, playerColor = playerColor)
+            OrganicHealthBar(progress = hpProgress, modifier = Modifier.weight(1f))
+            HudIconButton(
+                icon = if (isMusicEnabled) "🔊" else "🔇",
+                onClick = onSoundToggle,
+                accentColor = Color(0xFF7BE7FF)
+            )
+            HudIconButton(
+                icon = if (isPaused) "▶" else "⏸",
+                onClick = onPauseToggle,
+                accentColor = Color(0xFFFFCF7E)
+            )
         }
     }
     if (isPaused) {
@@ -1553,17 +1553,25 @@ private fun GameHud(
 }
 
 @Composable
-private fun OrganicHealthBar(progress: Float) {
+private fun OrganicHealthBar(
+    progress: Float,
+    modifier: Modifier = Modifier
+) {
     val lowHp = progress < 0.3f
     val pulse = rememberInfiniteTransition(label = "hp-pulse").animateFloat(
         initialValue = 0.8f, targetValue = 1f,
         animationSpec = infiniteRepeatable(tween(700), RepeatMode.Reverse), label = "hp-p"
     ).value
     val animatedProgress by animateFloatAsState(progress.coerceIn(0f, 1f), tween(350), label = "hp")
-    Surface(shape = RoundedCornerShape(100.dp), color = Color(0xA60A2230), modifier = Modifier.width(170.dp).height(18.dp)) {
+    Surface(
+        shape = RoundedCornerShape(14.dp),
+        color = Color(0xB20A2230),
+        border = BorderStroke(1.dp, Color(0x6698FFF6)),
+        modifier = modifier.height(40.dp)
+    ) {
         LinearProgressIndicator(
             progress = { animatedProgress },
-            modifier = Modifier.fillMaxSize().padding(2.dp),
+            modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp, vertical = 10.dp),
             color = if (lowHp) Color(0xFFFF7A4C).copy(alpha = pulse) else Color(0xFF70F5BA),
             trackColor = Color(0x33000000),
             strokeCap = androidx.compose.ui.graphics.StrokeCap.Round
