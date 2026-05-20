@@ -66,12 +66,14 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.foundation.shape.RoundedCornerShape
 import com.playeverywhere999.hungryblob.ui.theme.HungryBlobTheme
 import org.json.JSONArray
@@ -1466,6 +1468,8 @@ private fun GameHud(
     onPauseToggle: () -> Unit,
     onRestart: () -> Unit
 ) {
+    var showRestartConfirmation by remember { mutableStateOf(false) }
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -1502,12 +1506,32 @@ private fun GameHud(
             border = BorderStroke(1.dp, Color(0x6698FFF6))
         ) {
             Button(
-                onClick = onRestart,
+                onClick = { showRestartConfirmation = true },
                 shape = RoundedCornerShape(14.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0x4435B6A9), contentColor = Color.White),
                 modifier = Modifier.padding(8.dp)
             ) { Text("Restart") }
         }
+    }
+    if (showRestartConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showRestartConfirmation = false },
+            title = { Text("Restart game?") },
+            text = { Text("Current progress will be lost.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showRestartConfirmation = false
+                        onRestart()
+                    }
+                ) { Text("Restart") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRestartConfirmation = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 }
 
