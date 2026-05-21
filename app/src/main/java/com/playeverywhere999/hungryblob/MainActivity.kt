@@ -169,10 +169,8 @@ private const val FOOD_CAPTURE_RADIUS_FACTOR = 1.1f
 private const val BOT_SPLIT_FOOD_THRESHOLD = 50
 private const val GAME_PREFS = "hungry_blob_save"
 private const val GAME_STATE_KEY = "state_v2"
-// TODO: Удалить перед релизом: временно снижаем нагрузку на сцену для тестирования поведения хищников.
-private const val IS_PREDATOR_TEST_SPAWN_ENABLED = true
-// TODO: Удалить перед релизом: упрощенная физика еды для поиска причины тормозов.
-private const val IS_FAST_FOOD_PHYSICS_ENABLED = true
+private const val IS_PREDATOR_TEST_SPAWN_ENABLED = false
+private const val IS_FAST_FOOD_PHYSICS_ENABLED = false
 private const val FAST_FOOD_PARTICLE_COUNT = 140
 private const val FAST_BOT_COUNT = 10
 private const val FAST_JELLYFISH_COUNT = 6
@@ -541,19 +539,26 @@ fun AmoebaGame() {
                     )
                 }
                 playerColor = candidateFoodToConsume.color
-                foods = foods.filterNot { it.id == candidateFoodToConsume.id } + FoodParticle(
-                    id = nextFoodId++,
-                    position = randomFoodPosition(
-                        worldSize = worldSize,
-                        padding = max(blobRadius * 0.25f, blobRadius * 0.82f),
-                        blobPos = blobPos,
-                        minDistanceFromBlob = min(worldSize.width, worldSize.height) * 0.35f,
-                        obstacles = obstacles
-                    ),
-                    velocity = Offset.Zero,
-                    color = randomFoodColor(),
-                    emoji = randomFoodEmoji()
-                )
+                foods = buildList(foods.size) {
+                    for (food in foods) {
+                        if (food.id != candidateFoodToConsume.id) add(food)
+                    }
+                    add(
+                        FoodParticle(
+                            id = nextFoodId++,
+                            position = randomFoodPosition(
+                                worldSize = worldSize,
+                                padding = max(blobRadius * 0.25f, blobRadius * 0.82f),
+                                blobPos = blobPos,
+                                minDistanceFromBlob = min(worldSize.width, worldSize.height) * 0.35f,
+                                obstacles = obstacles
+                            ),
+                            velocity = Offset.Zero,
+                            color = randomFoodColor(),
+                            emoji = randomFoodEmoji()
+                        )
+                    )
+                }
                 reachedFood = true
             }
 
@@ -623,7 +628,6 @@ fun AmoebaGame() {
                 } else preferredSpawn
                 AmoebaEater(
                     id = idx,
-                    // TODO: Удалить перед релизом: для тестирования спавним хищников рядом с игроком.
                     position = safeSpawn,
                     heading = Offset(cos(angle), sin(angle)),
                     type = PredatorType.entries[idx % PredatorType.entries.size]
@@ -677,7 +681,9 @@ fun AmoebaGame() {
             }
         }
 
-        val hitJelly = jellyfish.any { (it.position - blobPos).getDistance() < blobRadius + jellyRadius * 0.65f }
+        val jellyHitRadius = blobRadius + jellyRadius * 0.65f
+        val jellyHitRadiusSq = jellyHitRadius * jellyHitRadius
+        val hitJelly = jellyfish.any { (it.position - blobPos).getDistanceSquared() < jellyHitRadiusSq }
         shockTimer = if (hitJelly) 1f else (shockTimer - 0.03f).coerceAtLeast(0f)
 
         val foodBaseSpeed = speed * 0.9f
@@ -685,10 +691,17 @@ fun AmoebaGame() {
         if (IS_PREDATOR_TEST_SPAWN_ENABLED) updateFoodThisFrame = !updateFoodThisFrame
         if (shouldUpdateFood) {
             foods = foods.map { food ->
-            val botThreat = bots.minByOrNull { (food.position - it.position).getDistance() }?.position
-            val playerDistance = (food.position - blobPos).getDistance()
-            val botDistance = botThreat?.let { (food.position - it).getDistance() } ?: Float.MAX_VALUE
-            val threatPos = if (playerDistance <= botDistance) blobPos else botThreat
+            var botThreat: Offset? = null
+            var botThreatDistanceSq = Float.MAX_VALUE
+            for (bot in bots) {
+                val distSq = (food.position - bot.position).getDistanceSquared()
+                if (distSq < botThreatDistanceSq) {
+                    botThreatDistanceSq = distSq
+                    botThreat = bot.position
+                }
+            }
+            val playerDistanceSq = (food.position - blobPos).getDistanceSquared()
+            val threatPos = if (playerDistanceSq <= botThreatDistanceSq) blobPos else botThreat
 
             val away = if (threatPos != null) food.position - threatPos else Offset.Zero
             val d = away.getDistance().coerceAtLeast(0.001f)
@@ -931,10 +944,20 @@ fun AmoebaGame() {
 
         val foodsToRemoveByBots = mutableSetOf<Long>()
         bots = bots.map { bot ->
-            val nearest = foods.minByOrNull { (it.position - bot.position).getDistance() }
+            var nearest: FoodParticle? = null
+            var nearestDistSq = Float.MAX_VALUE
+            for (food in foods) {
+                val distSq = (food.position - bot.position).getDistanceSquared()
+                if (distSq < nearestDistSq) {
+                    nearestDistSq = distSq
+                    nearest = food
+                }
+            }
+            val captureRadius = blobRadius * FOOD_CAPTURE_RADIUS_FACTOR
+            val captureRadiusSq = captureRadius * captureRadius
             val candidateFood = when {
                 bot.consumedFoodId != null -> foods.firstOrNull { it.id == bot.consumedFoodId }
-                nearest != null && (nearest.position - bot.position).getDistance() < blobRadius * FOOD_CAPTURE_RADIUS_FACTOR -> nearest
+                nearest != null && nearestDistSq < captureRadiusSq -> nearest
                 else -> null
             }
             if (candidateFood == null) {
@@ -951,20 +974,27 @@ fun AmoebaGame() {
         }
 
         if (foodsToRemoveByBots.isNotEmpty()) {
-            foods = foods.filterNot { it.id in foodsToRemoveByBots } + List(foodsToRemoveByBots.size) {
-                FoodParticle(
-                    id = nextFoodId++,
-                    position = randomFoodPosition(
-                        worldSize = worldSize,
-                        padding = foodSpawnClearance,
-                        blobPos = blobPos,
-                        minDistanceFromBlob = min(worldSize.width, worldSize.height) * 0.35f,
-                        obstacles = obstacles
-                    ),
-                    velocity = Offset.Zero,
-                    color = randomFoodColor(),
-                    emoji = randomFoodEmoji()
-                )
+            foods = buildList(foods.size) {
+                for (food in foods) {
+                    if (food.id !in foodsToRemoveByBots) add(food)
+                }
+                repeat(foodsToRemoveByBots.size) {
+                    add(
+                        FoodParticle(
+                            id = nextFoodId++,
+                            position = randomFoodPosition(
+                                worldSize = worldSize,
+                                padding = foodSpawnClearance,
+                                blobPos = blobPos,
+                                minDistanceFromBlob = min(worldSize.width, worldSize.height) * 0.35f,
+                                obstacles = obstacles
+                            ),
+                            velocity = Offset.Zero,
+                            color = randomFoodColor(),
+                            emoji = randomFoodEmoji()
+                        )
+                    )
+                }
             }
         }
 
@@ -2191,6 +2221,7 @@ private operator fun Offset.plus(other: Offset): Offset = Offset(x + other.x, y 
 private operator fun Offset.minus(other: Offset): Offset = Offset(x - other.x, y - other.y)
 private operator fun Offset.times(value: Float): Offset = Offset(x * value, y * value)
 private operator fun Offset.div(value: Float): Offset = Offset(x / value, y / value)
+private fun Offset.getDistanceSquared(): Float = x * x + y * y
 private fun Offset.getDistance(): Float = sqrt(x * x + y * y)
 private fun isFoodInWorldCorner(
     position: Offset,
