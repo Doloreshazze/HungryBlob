@@ -177,6 +177,8 @@ private const val FAST_FOOD_PARTICLE_COUNT = 140
 private const val FAST_BOT_COUNT = 10
 private const val FAST_JELLYFISH_COUNT = 6
 
+private fun desiredEvilAmoebaCount(liveAmoebas: Int): Int = max(1, liveAmoebas / 10)
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -1136,6 +1138,32 @@ fun AmoebaGame() {
         }
         if (stingerPlayerBites > 0) {
             playerFoodCount = (playerFoodCount - stingerPlayerBites).coerceAtLeast(0)
+        }
+        val liveAmoebas = bots.size + if (alive) 1 else 0
+        val evilAmoebas = amoebaEaters.filter { it.type == PredatorType.EVIL_AMOEBA }
+        val desiredEvilCount = desiredEvilAmoebaCount(liveAmoebas)
+        if (evilAmoebas.size > desiredEvilCount) {
+            val idsToRemove = evilAmoebas.shuffled().take(evilAmoebas.size - desiredEvilCount).map { it.id }.toSet()
+            amoebaEaters = amoebaEaters.filterNot { it.id in idsToRemove }
+        } else if (evilAmoebas.size < desiredEvilCount) {
+            val toAdd = desiredEvilCount - evilAmoebas.size
+            var nextEvilId = (amoebaEaters.maxOfOrNull { it.id } ?: -1) + 1
+            val newEvilAmoebas = List(toAdd) {
+                val evilHeadingAngle = Random.nextFloat() * 2f * PI.toFloat()
+                AmoebaEater(
+                    id = nextEvilId++,
+                    position = randomFoodPosition(
+                        worldSize = worldSize,
+                        padding = blobRadius * 1.05f + movementPadding,
+                        blobPos = blobPos,
+                        minDistanceFromBlob = blobRadius * 10f,
+                        obstacles = obstacles
+                    ),
+                    heading = Offset(cos(evilHeadingAngle), sin(evilHeadingAngle)),
+                    type = PredatorType.EVIL_AMOEBA
+                )
+            }
+            amoebaEaters = amoebaEaters + newEvilAmoebas
         }
         val hitByEvil = amoebaEaters.any {
             it.type == PredatorType.EVIL_AMOEBA && (it.position - blobPos).getDistance() < blobRadius * 1.45f && alive
