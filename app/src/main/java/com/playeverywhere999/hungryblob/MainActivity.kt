@@ -97,6 +97,7 @@ private data class FoodParticle(
 private data class ObstacleRect(val left: Float, val top: Float, val right: Float, val bottom: Float)
 private data class ObstacleBounds(val left: Float, val top: Float, val right: Float, val bottom: Float)
 private data class ObstacleIndex(val cellSize: Float, val buckets: Map<Long, List<ObstacleRect>>)
+private data class FoodIndex(val cellSize: Float, val buckets: Map<Long, List<FoodParticle>>)
 private data class BotAmoeba(
     val id: Int,
     val position: Offset,
@@ -799,12 +800,14 @@ fun AmoebaGame() {
 
         val botVisionRange = botRadius * 8f
         val botVisionRangeSq = botVisionRange * botVisionRange
+        val foodIndex = buildFoodIndex(foods, botVisionRange)
         bots = bots.map { bot ->
             var nearestVisible: FoodParticle? = null
             var nearestVisibleDistSq = Float.MAX_VALUE
             var nearestNonCornerVisible: FoodParticle? = null
             var nearestNonCornerVisibleDistSq = Float.MAX_VALUE
-            for (food in foods) {
+            val candidateFoods = foodIndex?.nearby(bot.position, botVisionRange) ?: foods
+            for (food in candidateFoods) {
                 val dx = food.position.x - bot.position.x
                 val dy = food.position.y - bot.position.y
                 val distSq = dx * dx + dy * dy
@@ -2112,6 +2115,36 @@ private fun obstacleBounds(obstacles: List<ObstacleRect>): ObstacleBounds? {
         bottom = max(bottom, obstacle.bottom)
     }
     return ObstacleBounds(left = left, top = top, right = right, bottom = bottom)
+}
+
+
+private fun foodCellKey(x: Int, y: Int): Long = (x.toLong() shl 32) xor (y.toLong() and 0xffffffffL)
+
+private fun buildFoodIndex(foods: List<FoodParticle>, cellSize: Float): FoodIndex? {
+    if (foods.size < 20 || cellSize <= 0.001f) return null
+    val safeCell = cellSize.coerceAtLeast(1f)
+    val buckets = HashMap<Long, MutableList<FoodParticle>>(foods.size)
+    for (food in foods) {
+        val cellX = kotlin.math.floor(food.position.x / safeCell).toInt()
+        val cellY = kotlin.math.floor(food.position.y / safeCell).toInt()
+        val key = foodCellKey(cellX, cellY)
+        buckets.getOrPut(key) { mutableListOf() }.add(food)
+    }
+    return FoodIndex(safeCell, buckets)
+}
+
+private fun FoodIndex.nearby(position: Offset, range: Float): List<FoodParticle> {
+    val minCellX = kotlin.math.floor((position.x - range) / cellSize).toInt()
+    val maxCellX = kotlin.math.floor((position.x + range) / cellSize).toInt()
+    val minCellY = kotlin.math.floor((position.y - range) / cellSize).toInt()
+    val maxCellY = kotlin.math.floor((position.y + range) / cellSize).toInt()
+    val out = ArrayList<FoodParticle>()
+    for (x in minCellX..maxCellX) {
+        for (y in minCellY..maxCellY) {
+            buckets[foodCellKey(x, y)]?.let(out::addAll)
+        }
+    }
+    return out
 }
 
 private fun collidesWithObstaclesFast(
