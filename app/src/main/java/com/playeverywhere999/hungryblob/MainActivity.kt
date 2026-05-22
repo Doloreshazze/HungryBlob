@@ -97,6 +97,7 @@ private data class FoodParticle(
 private data class ObstacleRect(val left: Float, val top: Float, val right: Float, val bottom: Float)
 private data class ObstacleBounds(val left: Float, val top: Float, val right: Float, val bottom: Float)
 private data class ObstacleIndex(val cellSize: Float, val buckets: Map<Long, List<ObstacleRect>>)
+private data class FoodIndex(val cellSize: Float, val buckets: Map<Long, List<FoodParticle>>)
 private data class BotAmoeba(
     val id: Int,
     val position: Offset,
@@ -468,10 +469,10 @@ fun AmoebaGame() {
             IS_PREDATOR_TEST_SPAWN_ENABLED -> 260
             else -> FOOD_PARTICLE_COUNT
         }
-        val nearestFood = foods.minByOrNull { (it.position - blobPos).getDistance() }
+        val nearestFood = foods.minByOrNull { (it.position - blobPos).getDistanceSquared() }
         val candidateFoodToConsume = when {
             consumedFoodId != null -> foods.firstOrNull { it.id == consumedFoodId }
-            nearestFood != null && (nearestFood.position - blobPos).getDistance() < blobRadius * FOOD_CAPTURE_RADIUS_FACTOR -> nearestFood
+            nearestFood != null && (nearestFood.position - blobPos).getDistanceSquared() < (blobRadius * FOOD_CAPTURE_RADIUS_FACTOR) * (blobRadius * FOOD_CAPTURE_RADIUS_FACTOR) -> nearestFood
             else -> null
         }
         var reachedFood = candidateFoodToConsume != null
@@ -687,10 +688,10 @@ fun AmoebaGame() {
         if (IS_PREDATOR_TEST_SPAWN_ENABLED) updateFoodThisFrame = !updateFoodThisFrame
         if (shouldUpdateFood) {
             foods = foods.map { food ->
-            val botThreat = bots.minByOrNull { (food.position - it.position).getDistance() }?.position
-            val playerDistance = (food.position - blobPos).getDistance()
-            val botDistance = botThreat?.let { (food.position - it).getDistance() } ?: Float.MAX_VALUE
-            val threatPos = if (playerDistance <= botDistance) blobPos else botThreat
+            val botThreat = bots.minByOrNull { (food.position - it.position).getDistanceSquared() }?.position
+            val playerDistanceSq = (food.position - blobPos).getDistanceSquared()
+            val botDistanceSq = botThreat?.let { (food.position - it).getDistanceSquared() } ?: Float.MAX_VALUE
+            val threatPos = if (playerDistanceSq <= botDistanceSq) blobPos else botThreat
 
             val away = if (threatPos != null) food.position - threatPos else Offset.Zero
             val d = away.getDistance().coerceAtLeast(0.001f)
@@ -799,12 +800,14 @@ fun AmoebaGame() {
 
         val botVisionRange = botRadius * 8f
         val botVisionRangeSq = botVisionRange * botVisionRange
+        val foodIndex = buildFoodIndex(foods, botVisionRange)
         bots = bots.map { bot ->
             var nearestVisible: FoodParticle? = null
             var nearestVisibleDistSq = Float.MAX_VALUE
             var nearestNonCornerVisible: FoodParticle? = null
             var nearestNonCornerVisibleDistSq = Float.MAX_VALUE
-            for (food in foods) {
+            val candidateFoods = foodIndex?.nearby(bot.position, botVisionRange) ?: foods
+            for (food in candidateFoods) {
                 val dx = food.position.x - bot.position.x
                 val dy = food.position.y - bot.position.y
                 val distSq = dx * dx + dy * dy
@@ -933,10 +936,10 @@ fun AmoebaGame() {
 
         val foodsToRemoveByBots = mutableSetOf<Long>()
         bots = bots.map { bot ->
-            val nearest = foods.minByOrNull { (it.position - bot.position).getDistance() }
+            val nearest = foods.minByOrNull { (it.position - bot.position).getDistanceSquared() }
             val candidateFood = when {
                 bot.consumedFoodId != null -> foods.firstOrNull { it.id == bot.consumedFoodId }
-                nearest != null && (nearest.position - bot.position).getDistance() < blobRadius * FOOD_CAPTURE_RADIUS_FACTOR -> nearest
+                nearest != null && (nearest.position - bot.position).getDistanceSquared() < (blobRadius * FOOD_CAPTURE_RADIUS_FACTOR) * (blobRadius * FOOD_CAPTURE_RADIUS_FACTOR) -> nearest
                 else -> null
             }
             if (candidateFood == null) {
@@ -2114,6 +2117,36 @@ private fun obstacleBounds(obstacles: List<ObstacleRect>): ObstacleBounds? {
     return ObstacleBounds(left = left, top = top, right = right, bottom = bottom)
 }
 
+
+private fun foodCellKey(x: Int, y: Int): Long = (x.toLong() shl 32) xor (y.toLong() and 0xffffffffL)
+
+private fun buildFoodIndex(foods: List<FoodParticle>, cellSize: Float): FoodIndex? {
+    if (foods.size < 20 || cellSize <= 0.001f) return null
+    val safeCell = cellSize.coerceAtLeast(1f)
+    val buckets = HashMap<Long, MutableList<FoodParticle>>(foods.size)
+    for (food in foods) {
+        val cellX = kotlin.math.floor(food.position.x / safeCell).toInt()
+        val cellY = kotlin.math.floor(food.position.y / safeCell).toInt()
+        val key = foodCellKey(cellX, cellY)
+        buckets.getOrPut(key) { mutableListOf() }.add(food)
+    }
+    return FoodIndex(safeCell, buckets)
+}
+
+private fun FoodIndex.nearby(position: Offset, range: Float): List<FoodParticle> {
+    val minCellX = kotlin.math.floor((position.x - range) / cellSize).toInt()
+    val maxCellX = kotlin.math.floor((position.x + range) / cellSize).toInt()
+    val minCellY = kotlin.math.floor((position.y - range) / cellSize).toInt()
+    val maxCellY = kotlin.math.floor((position.y + range) / cellSize).toInt()
+    val out = ArrayList<FoodParticle>()
+    for (x in minCellX..maxCellX) {
+        for (y in minCellY..maxCellY) {
+            buckets[foodCellKey(x, y)]?.let(out::addAll)
+        }
+    }
+    return out
+}
+
 private fun collidesWithObstaclesFast(
     center: Offset,
     radius: Float,
@@ -2181,7 +2214,7 @@ private fun buildLetterObstacles(worldSize: Size, viewportSize: Size): List<Obst
     )
 
     fun buildLine(text: String, topY: Float, lineHeight: Float): List<ObstacleRect> {
-        val totalCols = text.sumOf { glyphs[it]!![0].length } + (text.length - 1)
+        val totalCols = text.sumOf { ch -> (glyphs[ch] ?: glyphs.getValue(' '))[0].length } + (text.length - 1)
         val cell = (worldSize.width * 0.92f) / totalCols
         val thickness = cell * 0.94f
         val scaledCell = min(cell, lineHeight / 7f)
@@ -2252,6 +2285,8 @@ private fun escapeFoodFromWorldCorner(
     val correctedVelocity = (velocity * 0.55f) + outward * kickStrength
     return correctedPosition to correctedVelocity
 }
+
+private fun Offset.getDistanceSquared(): Float = (x * x) + (y * y)
 
 private fun Offset.normalized(): Offset {
     val d = getDistance()
@@ -2388,6 +2423,10 @@ private fun saveSnapshot(context: android.content.Context, snapshot: GameSnapsho
         .apply()
 }
 
+
+private fun parsePredatorType(raw: String): PredatorType =
+    PredatorType.entries.firstOrNull { it.name == raw } ?: PredatorType.TENTACLE
+
 private fun loadSnapshot(context: android.content.Context): GameSnapshot? {
     val raw = context.getSharedPreferences(GAME_PREFS, android.content.Context.MODE_PRIVATE).getString(GAME_STATE_KEY, null)
         ?: return null
@@ -2450,7 +2489,7 @@ private fun loadSnapshot(context: android.content.Context): GameSnapshot? {
                         id = item.getInt("id"),
                         position = Offset(item.getDouble("x").toFloat(), item.getDouble("y").toFloat()),
                         heading = Offset(item.getDouble("hx").toFloat(), item.getDouble("hy").toFloat()),
-                        type = PredatorType.valueOf(item.optString("type", PredatorType.TENTACLE.name)),
+                        type = parsePredatorType(item.optString("type", PredatorType.TENTACLE.name)),
                         chompPhase = item.optDouble("chompPhase", 0.0).toFloat(),
                         attachTimer = item.optDouble("attachTimer", 0.0).toFloat(),
                         disguiseTimer = item.optDouble("disguiseTimer", 0.0).toFloat(),
