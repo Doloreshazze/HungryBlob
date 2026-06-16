@@ -57,6 +57,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.IntSize
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -153,7 +155,8 @@ private data class GameSnapshot(
     val jellyPortalStates: Map<Int, Boolean>,
     val eaterPortalStates: Map<Int, Boolean>,
     val updateFoodThisFrame: Boolean,
-    val isPaused: Boolean
+    val isPaused: Boolean,
+    val totalEatenFood: Int = 0
 )
 
 private const val FOOD_PARTICLE_COUNT = 440
@@ -188,7 +191,35 @@ class MainActivity : ComponentActivity() {
         hideSystemBars()
         setContent {
             HungryBlobTheme {
-                AmoebaGame()
+                val context = LocalContext.current
+                val lifecycleOwner = LocalLifecycleOwner.current
+                val soundManager = remember { SoundManager(context) }
+                
+                DisposableEffect(lifecycleOwner) {
+                    val observer = object : androidx.lifecycle.DefaultLifecycleObserver {
+                        override fun onPause(owner: androidx.lifecycle.LifecycleOwner) {
+                            soundManager.onPause()
+                        }
+                        override fun onStop(owner: androidx.lifecycle.LifecycleOwner) {
+                            soundManager.onPause()
+                        }
+                        override fun onResume(owner: androidx.lifecycle.LifecycleOwner) {
+                            soundManager.onResume()
+                        }
+                    }
+                    lifecycleOwner.lifecycle.addObserver(observer)
+                    onDispose {
+                        lifecycleOwner.lifecycle.removeObserver(observer)
+                        soundManager.release()
+                    }
+                }
+                
+                var showSplash by remember { mutableStateOf(true) }
+                if (showSplash) {
+                    AnimatedSplashScreen(onSplashFinished = { showSplash = false })
+                } else {
+                    AmoebaGame(soundManager = soundManager)
+                }
             }
         }
     }
@@ -209,7 +240,7 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun AmoebaGame() {
+fun AmoebaGame(soundManager: SoundManager) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val density = LocalDensity.current
@@ -278,8 +309,15 @@ fun AmoebaGame() {
     var cachedObstacleBounds by remember { mutableStateOf<ObstacleBounds?>(null) }
     var cachedObstacleIndex by remember { mutableStateOf<ObstacleIndex?>(null) }
     var isPaused by remember { mutableStateOf(initialSnapshot.isPaused) }
+    var speedMultiplier by remember { mutableStateOf(1.0f) }
+    var totalEatenFood by remember { mutableStateOf(initialSnapshot.totalEatenFood) }
+    val wasChasing = remember { BooleanArray(1) { false } }
+    LaunchedEffect(isMusicEnabled) {
+        soundManager.setSoundEnabled(isMusicEnabled)
+    }
 
     val resetGame: () -> Unit = {
+        wasChasing[0] = false
         blobPos = Offset(400f, 700f)
         cameraTopLeft = Offset.Zero
         foods = emptyList()
@@ -330,24 +368,28 @@ fun AmoebaGame() {
             jellyPortalStates = jellyPortalStates,
             eaterPortalStates = eaterPortalStates,
             updateFoodThisFrame = updateFoodThisFrame,
-            isPaused = isPaused
+            isPaused = isPaused,
+            totalEatenFood = totalEatenFood
         )
     )
 
     DisposableEffect(lifecycleOwner) {
-        val observer = object : DefaultLifecycleObserver {
-            override fun onPause(owner: LifecycleOwner) {
+        val observer = object : androidx.lifecycle.DefaultLifecycleObserver {
+            override fun onPause(owner: androidx.lifecycle.LifecycleOwner) {
                 saveSnapshot(
                     context = context,
                     snapshot = latestSnapshot
                 )
             }
 
-            override fun onStop(owner: LifecycleOwner) {
+            override fun onStop(owner: androidx.lifecycle.LifecycleOwner) {
                 saveSnapshot(
                     context = context,
                     snapshot = latestSnapshot
                 )
+            }
+            
+            override fun onResume(owner: androidx.lifecycle.LifecycleOwner) {
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -402,7 +444,7 @@ fun AmoebaGame() {
                     )
                 }
         ) {
-        val speed = if (isPaused) 0f else with(density) { 2.5f }
+        val speed = if (isPaused) 0f else with(density) { 3.0f * speedMultiplier }
         val viewportSize = size
         val worldSize = Size(viewportSize.width * 10f, viewportSize.height * 4f)
         val blobRadius = min(viewportSize.width, viewportSize.height) * 0.09f
@@ -512,7 +554,10 @@ fun AmoebaGame() {
                 consumedFoodId = null
                 vacuoleProgress = 1f
                 playerFoodCount += 1
+                totalEatenFood += 1
+                soundManager.playEat()
                 if (playerFoodCount >= nextSplitAt) {
+                    soundManager.playSplit()
                     nextSplitAt += 10
                     splitEventTimer = 1f
                     if (bots.size < BOT_AMOEBA_COUNT) {
@@ -681,6 +726,9 @@ fun AmoebaGame() {
         }
 
         val hitJelly = jellyfish.any { (it.position - blobPos).getDistance() < blobRadius + jellyRadius * 0.65f }
+        if (hitJelly && shockTimer <= 0f) {
+            soundManager.playShock()
+        }
         shockTimer = if (hitJelly) 1f else (shockTimer - 0.03f).coerceAtLeast(0f)
 
         val foodBaseSpeed = speed * 0.9f
@@ -697,7 +745,8 @@ fun AmoebaGame() {
             val d = away.getDistance().coerceAtLeast(0.001f)
             val escapeDir = away / d
             val panic = ((blobRadius * 3.2f - d) / (blobRadius * 3.2f)).coerceIn(0f, 1f)
-            val accel = escapeDir * (panic * 1.4f)
+            
+            val accel = -escapeDir * (panic * 1.4f)
 
             val dampedRaw = (food.velocity + accel) * 0.93f
             val damped = if (dampedRaw.getDistance() > foodBaseSpeed) {
@@ -1012,6 +1061,7 @@ fun AmoebaGame() {
         var stingerPlayerBites = 0
         val predatorVisionRange = (blobRadius * 1.05f) * 10f
         val predatorVisionRangeSq = predatorVisionRange * predatorVisionRange
+        var isAnyChasing = false
         amoebaEaters = amoebaEaters.map { eater ->
             val isFleeing = eater.type == PredatorType.STINGER &&
                 eater.satiatedTimer > 0f &&
@@ -1020,8 +1070,11 @@ fun AmoebaGame() {
                 false
             } else {
                 alive &&
-                    (blobPos - eater.position).getDistance() <= predatorVisionRange &&
+                    (blobPos - eater.position).getDistanceSquared() <= predatorVisionRangeSq &&
                     hasLineOfSight(eater.position, blobPos, obstacles)
+            }
+            if (visiblePlayer) {
+                isAnyChasing = true
             }
             var nearestVisibleBotPos: Offset? = null
             var nearestVisibleBotDistSq = Float.MAX_VALUE
@@ -1127,6 +1180,11 @@ fun AmoebaGame() {
                 shockTimer = nextShockTimer
             )
         }
+        if (isAnyChasing && !wasChasing[0]) {
+            soundManager.playChase()
+        }
+        wasChasing[0] = isAnyChasing
+
         if (parasiteDrain > 0) {
             playerFoodCount = (playerFoodCount - parasiteDrain / 40).coerceAtLeast(0)
             if (moveTarget != null) moveTarget = blobPos + (moveTarget!! - blobPos) * (1f - playerControlPenalty)
@@ -1366,7 +1424,6 @@ fun AmoebaGame() {
         }
         foods.forEach { food ->
             val center = food.position - cameraTopLeft
-            drawCircle(color = food.color.copy(alpha = 0.35f), radius = foodRadius, center = center)
             drawContext.canvas.nativeCanvas.drawText(food.emoji, center.x, center.y + emojiPaint.textSize * 0.35f, emojiPaint)
         }
 
@@ -1458,7 +1515,6 @@ fun AmoebaGame() {
             drawSleepAnimation(playerCenter, blobRadius, morphProgress)
             drawSleepingEyes(playerCenter, blobRadius)
         }
-
         if (splitEventTimer > 0f) {
             drawSplitCelebration(blobPos - cameraTopLeft, blobRadius * (1f + splitEventTimer), splitEventTimer, morphProgress)
         }
@@ -1470,22 +1526,25 @@ fun AmoebaGame() {
                 phase = morphProgress + 0.35f
             )
         }
-        }
-
-        GameHud(
-            score = bots.size + if (playerRespawnTimer <= 0f) 1 else 0,
-            hpProgress = ((playerFoodCount % 10) / 10f).coerceIn(0f, 1f),
-            playerColor = playerColor,
-            isPaused = isPaused,
-            isMusicEnabled = isMusicEnabled,
-            onSoundToggle = { isMusicEnabled = !isMusicEnabled },
-            onPauseToggle = {
-                isPaused = !isPaused
-                if (isPaused) moveTarget = null
-            },
-            onRestart = resetGame
-        )
     }
+
+    GameHud(
+        score = bots.size + if (playerRespawnTimer <= 0f) 1 else 0,
+        hpProgress = ((playerFoodCount % 10) / 10f).coerceIn(0f, 1f),
+        playerColor = playerColor,
+        isPaused = isPaused,
+        isMusicEnabled = isMusicEnabled,
+        speedMultiplier = speedMultiplier,
+        onSpeedMultiplierChange = { speedMultiplier = it },
+        onSoundToggle = { isMusicEnabled = !isMusicEnabled },
+        onPauseToggle = {
+            isPaused = !isPaused
+            if (isPaused) moveTarget = null
+        },
+        onRestart = resetGame,
+        totalEatenFood = totalEatenFood
+    )
+}
 }
 
 @Composable
@@ -1495,9 +1554,12 @@ private fun GameHud(
     playerColor: Color,
     isPaused: Boolean,
     isMusicEnabled: Boolean,
+    speedMultiplier: Float,
+    onSpeedMultiplierChange: (Float) -> Unit,
     onSoundToggle: () -> Unit,
     onPauseToggle: () -> Unit,
-    onRestart: () -> Unit
+    onRestart: () -> Unit,
+    totalEatenFood: Int
 ) {
     var showRestartConfirmation by remember { mutableStateOf(false) }
 
@@ -1507,25 +1569,40 @@ private fun GameHud(
             .padding(WindowInsets.safeDrawing.asPaddingValues())
             .padding(horizontal = 16.dp, vertical = 12.dp)
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
-        ) {
-            ScorePill(score = score, playerColor = playerColor)
-            OrganicHealthBar(progress = hpProgress, modifier = Modifier.weight(1f))
-            HudIconButton(
-                icon = "🔊",
-                onClick = onSoundToggle,
-                accentColor = Color(0xFF7BE7FF),
-                showSlash = !isMusicEnabled,
-                slashColor = Color(0xFF2A6B7B)
-            )
-            HudIconButton(
-                icon = if (isPaused) "▶" else "⏸",
-                onClick = onPauseToggle,
-                accentColor = Color(0xFFFFCF7E)
-            )
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+            ) {
+                ScorePill(score = score, playerColor = playerColor)
+                OrganicHealthBar(progress = hpProgress, modifier = Modifier.weight(1f))
+                HudIconButton(
+                    icon = "🔊",
+                    onClick = onSoundToggle,
+                    accentColor = Color(0xFF7BE7FF),
+                    showSlash = !isMusicEnabled,
+                    slashColor = Color(0xFF2A6B7B)
+                )
+                HudIconButton(
+                    icon = if (isPaused) "▶" else "⏸",
+                    onClick = onPauseToggle,
+                    accentColor = Color(0xFFFFCF7E)
+                )
+            }
+            androidx.compose.foundation.layout.Spacer(modifier = Modifier.height(8.dp))
+            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                androidx.compose.material3.Text("Speed: ${String.format("%.1f", speedMultiplier)}x", color = Color.White)
+                androidx.compose.material3.Slider(
+                    value = speedMultiplier,
+                    onValueChange = onSpeedMultiplierChange,
+                    valueRange = 0.5f..5.0f,
+                    modifier = Modifier.weight(1f).padding(start = 8.dp)
+                )
+            }
+            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                androidx.compose.material3.Text("Total Food: $totalEatenFood", color = Color.White)
+            }
         }
     }
     if (isPaused) {
@@ -2314,7 +2391,8 @@ private fun randomFoodColor(): Color {
 @Composable
 fun AmoebaGamePreview() {
     HungryBlobTheme {
-        AmoebaGame()
+        val context = LocalContext.current
+        AmoebaGame(soundManager = remember { SoundManager(context) })
     }
 }
 
@@ -2336,6 +2414,7 @@ private fun saveSnapshot(context: android.content.Context, snapshot: GameSnapsho
         put("playerInsidePortal", snapshot.playerInsidePortal)
         put("updateFoodThisFrame", snapshot.updateFoodThisFrame)
         put("isPaused", snapshot.isPaused)
+        put("totalEatenFood", snapshot.totalEatenFood)
         put("botPortalStates", JSONObject().apply {
             snapshot.botPortalStates.forEach { (key, value) -> put(key.toString(), value) }
         })
@@ -2536,7 +2615,82 @@ private fun loadSnapshot(context: android.content.Context): GameSnapshot? {
             jellyPortalStates = parsePortalStates("jellyPortalStates"),
             eaterPortalStates = parsePortalStates("eaterPortalStates"),
             updateFoodThisFrame = json.optBoolean("updateFoodThisFrame", true),
-            isPaused = json.optBoolean("isPaused", false)
+            isPaused = json.optBoolean("isPaused", false),
+            totalEatenFood = json.optInt("totalEatenFood", 0)
         )
     }.getOrNull()
+}
+
+@Composable
+fun AnimatedSplashScreen(onSplashFinished: () -> Unit) {
+    val infiniteTransition = androidx.compose.animation.core.rememberInfiniteTransition()
+    val morphProgress by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = androidx.compose.animation.core.infiniteRepeatable(
+            animation = androidx.compose.animation.core.tween(2000, easing = androidx.compose.animation.core.LinearEasing),
+            repeatMode = androidx.compose.animation.core.RepeatMode.Restart
+        )
+    )
+
+    var startAnimation by remember { mutableStateOf(false) }
+    val alphaAnim by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (startAnimation) 1f else 0f,
+        animationSpec = androidx.compose.animation.core.tween(durationMillis = 1500)
+    )
+    val scaleAnim by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (startAnimation) 1f else 0.5f,
+        animationSpec = androidx.compose.animation.core.tween(durationMillis = 1500, easing = androidx.compose.animation.core.FastOutSlowInEasing)
+    )
+
+    LaunchedEffect(key1 = true) {
+        startAnimation = true
+        kotlinx.coroutines.delay(3000)
+        onSplashFinished()
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF071923)),
+        contentAlignment = androidx.compose.ui.Alignment.Center
+    ) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val center = Offset(size.width / 2, size.height / 2)
+            val baseRadius = min(size.width, size.height) * 0.35f
+            
+            val path = buildAmoebaPath(
+                center = center,
+                baseRadius = baseRadius,
+                morphProgress = morphProgress,
+                direction = Offset(1f, 0f),
+                engulfing = false,
+                foodScreenPosition = null,
+                engulfProgress = 0f
+            )
+            
+            drawPath(
+                path = path,
+                color = Color(0xFF6DE87E).copy(alpha = 0.5f), // A bright green Amoeba color, slightly transparent
+                style = androidx.compose.ui.graphics.drawscope.Fill
+            )
+            drawPath(
+                path = path,
+                color = Color(0xFF8FF09D).copy(alpha = 0.8f),
+                style = androidx.compose.ui.graphics.drawscope.Stroke(width = 8.dp.toPx())
+            )
+        }
+
+        androidx.compose.material3.Text(
+            text = "HUNGRY BLOB",
+            color = Color.White,
+            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+            fontSize = 48.sp,
+            modifier = Modifier.graphicsLayer {
+                alpha = alphaAnim
+                scaleX = scaleAnim
+                scaleY = scaleAnim
+            }
+        )
+    }
 }
